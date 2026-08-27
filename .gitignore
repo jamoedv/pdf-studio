@@ -1,0 +1,11 @@
+node_modules/
+.env
+backend/uploads/*
+backend/processed/*
+!backend/uploads/.gitkeep
+!backend/processed/.gitkeep
+frontend/dist/
+*.log
+*.pdf
+!frontend/public/*.pdf
+*.pdf
