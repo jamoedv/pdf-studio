@@ -157,6 +157,67 @@ router.post('/pdf-to-images', upload.single('file'), async (req, res, next) => {
     next(error);
   }
 });
+router.post('/workflow', upload.array('files', 10), async (req, res, next) => {
+  try {
+    const { steps, password } = req.body;
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    let parsedSteps;
+    try {
+      parsedSteps = JSON.parse(steps);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid steps format' });
+    }
+
+    if (!Array.isArray(parsedSteps) || parsedSteps.length === 0) {
+      return res.status(400).json({ error: 'steps must be a non-empty array' });
+    }
+
+    const fileInputs = req.files.map(f => f.path);
+
+    const job = await queueService.addJob('workflow', {
+      fileInputs,
+      steps: parsedSteps,
+      password: password || null
+    });
+
+    res.json(job);
+  } catch (error) {
+    next(error);
+  }
+});
+router.post('/metadata', upload.single('file'), async (req, res, next) => {
+  try {
+    const { title, author, subject } = req.body;
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const job = await queueService.addJob('metadata', {
+      inputPath: req.file.path,
+      meta: { title, author, subject }
+    });
+
+    res.json(job);
+  } catch (error) {
+    next(error);
+  }
+});
+router.post('/ocr', upload.single('file'), async (req, res, next) => {
+  try {
+    const { language = 'deu+eng' } = req.body;
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const job = await queueService.addJob('ocr', {
+      inputPath: req.file.path,
+      language
+    });
+
+    res.json(job);
+  } catch (error) {
+    next(error);
+  }
+});
 router.get('/job/:jobId', async (req, res, next) => {
   try {
     const status = await queueService.getJobStatus(req.params.jobId);

@@ -14,6 +14,8 @@ if (!fsSync.existsSync(processedDir)) fsSync.mkdirSync(processedDir, { recursive
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const chatRoutes = require('./routes/chat');
+const templatesRoutes = require('./routes/templates');
+const historyRoutes = require('./routes/history');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -30,6 +32,8 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/v1', apiRoutes);
 app.use('/api/v1', chatRoutes);
+app.use('/api/v1', templatesRoutes);
+app.use('/api/v1', historyRoutes);
 
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

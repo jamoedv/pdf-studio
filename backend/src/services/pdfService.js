@@ -290,21 +290,22 @@ class PDFService {
     return { protected: false };
   }
 
-  async pdfToImages(inputPath, outputDir, format = 'jpeg') {
+  async pdfToImages(inputPath, outputDir, format = 'jpeg', prefix = '') {
     const { exec } = require('child_process');
     const util = require('util');
     const execPromise = util.promisify(exec);
 
     await fs.mkdir(outputDir, { recursive: true });
 
-    const outputPrefix = path.join(outputDir, 'page');
+    const filePrefix = prefix ? `${prefix}_` : '';
+    const outputPrefix = path.join(outputDir, `${filePrefix}page`);
     const formatFlag = format === 'png' ? '-png' : '-jpeg';
 
     await execPromise(`pdftoppm ${formatFlag} -r 150 "${inputPath}" "${outputPrefix}"`);
 
     const allFiles = await fs.readdir(outputDir);
     const imageFiles = allFiles
-      .filter(f => f.startsWith('page') && (f.endsWith('.jpg') || f.endsWith('.png')))
+      .filter(f => f.startsWith(`${filePrefix}page`) && (f.endsWith('.jpg') || f.endsWith('.png')))
       .sort()
       .map(f => path.join(outputDir, f));
 
@@ -312,6 +313,38 @@ class PDFService {
       pageCount: imageFiles.length,
       files: imageFiles
     };
+  }
+  async setMetadata(inputPath, outputPath, meta = {}) {
+    const pdfBytes = await fs.readFile(inputPath);
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+
+    if (meta.title) pdfDoc.setTitle(meta.title);
+    if (meta.author) pdfDoc.setAuthor(meta.author);
+    if (meta.subject) pdfDoc.setSubject(meta.subject);
+    pdfDoc.setModificationDate(new Date());
+
+    const newBytes = await pdfDoc.save();
+    await fs.writeFile(outputPath, newBytes);
+
+    return {
+      title: meta.title || null,
+      author: meta.author || null,
+      subject: meta.subject || null
+    };
+  }
+
+  async ocrPDF(inputPath, outputPath, language = 'deu+eng') {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+
+    // ocrmypdf wäre ideal, aber falls nicht verfügbar: eigener Tesseract-Weg
+    try {
+      await execPromise(`ocrmypdf --language ${language} --skip-text "${inputPath}" "${outputPath}"`);
+      return { ocrApplied: true, method: 'ocrmypdf' };
+    } catch (e) {
+      throw new Error('OCR fehlgeschlagen: ' + e.message);
+    }
   }
 }
 
