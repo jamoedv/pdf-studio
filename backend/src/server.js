@@ -35,4 +35,6 @@ app.listen(PORT, () => {
   console.log(`🚀 PDF Processing API running on port ${PORT}`);
 });
 
+require('./workers/pdfWorker');
+
 module.exports = app;
