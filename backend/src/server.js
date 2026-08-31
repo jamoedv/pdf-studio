@@ -24,7 +24,8 @@ const PORT = process.env.PORT || 3000;
 app.use((req, res, next) => {
   if (req.path.startsWith('/outlook')) {
     helmet({
- frameguard: false,     
+ frameguard: false,
+ crossOriginResourcePolicy: { policy: 'cross-origin' },
  contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
