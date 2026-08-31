@@ -21,7 +21,29 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(helmet());
+app.use((req, res, next) => {
+  if (req.path.startsWith('/outlook')) {
+    helmet({
+ frameguard: false,     
+ contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          frameAncestors: [
+            "'self'",
+            "https://outlook.office.com",
+            "https://outlook.office365.com",
+            "https://outlook.live.com",
+            "https://*.outlook.com"
+          ],
+          scriptSrc: ["'self'", "'unsafe-inline'", "https://appsforoffice.microsoft.com"],
+          styleSrc: ["'self'", "'unsafe-inline'"]
+        }
+      }
+    })(req, res, next);
+  } else {
+    helmet()(req, res, next);
+  }
+});
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true
