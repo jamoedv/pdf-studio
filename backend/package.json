@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "start:all": "node -e \"require('./src/server'); require('./src/workers/pdfWorker');\"",
     "dev": "nodemon src/server.js",
     "worker": "node src/workers/pdfWorker.js",
     "dev:worker": "nodemon src/workers/pdfWorker.js"

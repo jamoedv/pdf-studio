@@ -4,11 +4,17 @@ const helmet = require('helmet');
 const compression = require('compression');
 const dotenv = require('dotenv');
 dotenv.config();
+
+const fsSync = require('fs');
+const uploadDir = process.env.UPLOAD_DIR || 'uploads';
+const processedDir = process.env.PROCESSED_DIR || 'processed';
+if (!fsSync.existsSync(uploadDir)) fsSync.mkdirSync(uploadDir, { recursive: true });
+if (!fsSync.existsSync(processedDir)) fsSync.mkdirSync(processedDir, { recursive: true });
+
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const chatRoutes = require('./routes/chat');
 const errorHandler = require('./middleware/errorHandler');
-
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,7 +40,5 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 PDF Processing API running on port ${PORT}`);
 });
-
-require('./workers/pdfWorker');
 
 module.exports = app;
