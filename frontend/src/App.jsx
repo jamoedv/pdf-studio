@@ -65,7 +65,7 @@ export default function App() {
 
   const handleFileUpload = (e) => {
     const newFiles = Array.from(e.target.files);
-    setFiles(prev => activeTab === 'merge' || activeTab === 'convert' ? [...prev, ...newFiles] : newFiles);
+    setFiles(prev => activeTab === 'merge' || (activeTab === 'convert' && convertDirection === 'toPDF') ? [...prev, ...newFiles] : newFiles);
     setResult(null);
     setError(null);
   };
@@ -75,12 +75,14 @@ export default function App() {
   };
 
   const addFiles = (fileList) => {
-    const validExts = activeTab === 'convert' ? ['.jpg', '.jpeg', '.png'] : ['.pdf'];
+    const validExts = (activeTab === 'convert' && convertDirection === 'toPDF')
+      ? ['.jpg', '.jpeg', '.png']
+      : ['.pdf'];
     const newFiles = Array.from(fileList).filter(f =>
       validExts.some(ext => f.name.toLowerCase().endsWith(ext))
     );
     if (newFiles.length === 0) return;
-    setFiles(prev => activeTab === 'merge' || activeTab === 'convert' ? [...prev, ...newFiles] : newFiles);
+    setFiles(prev => activeTab === 'merge' || (activeTab === 'convert' && convertDirection === 'toPDF') ? [...prev, ...newFiles] : newFiles);
     setResult(null);
     setError(null);
   };
