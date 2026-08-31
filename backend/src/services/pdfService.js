@@ -1,12 +1,76 @@
-const { PDFDocument, rgb } = require('pdf-lib');
+const { PDFDocument, rgb, PDFName, PDFNumber, PDFRawStream } = require('pdf-lib');
 const fs = require('fs').promises;
 const path = require('path');
+const sharp = require('sharp');
 
 class PDFService {
+
+  getCompressionSettings(level) {
+    const settings = {
+      low: { quality: 90, scale: 1.0 },
+      medium: { quality: 75, scale: 0.9 },
+      high: { quality: 60, scale: 0.75 },
+      maximum: { quality: 40, scale: 0.5 }
+    };
+    return settings[level] || settings.medium;
+  }
 
   async compressPDF(inputPath, outputPath, compressionLevel = 'medium') {
     const pdfBytes = await fs.readFile(inputPath);
     const pdfDoc = await PDFDocument.load(pdfBytes);
+    const { quality, scale } = this.getCompressionSettings(compressionLevel);
+
+    let imagesProcessed = 0;
+    const indirectObjects = pdfDoc.context.enumerateIndirectObjects();
+
+    for (const [ref, obj] of indirectObjects) {
+      try {
+        if (!(obj instanceof PDFRawStream)) continue;
+
+        const dict = obj.dict;
+        const subtype = dict.get(PDFName.of('Subtype'));
+        const filter = dict.get(PDFName.of('Filter'));
+
+        const isImage = subtype && subtype.toString() === '/Image';
+        const filterName = filter ? filter.toString() : '';
+        const isJpeg = filterName.includes('DCTDecode');
+
+        if (!isImage || !isJpeg) continue;
+
+        const originalBytes = obj.getContents();
+        if (!originalBytes || originalBytes.length < 2000) continue; // zu klein, lohnt nicht
+
+        const image = sharp(Buffer.from(originalBytes));
+        const metadata = await image.metadata();
+
+        let pipeline = image.jpeg({ quality, mozjpeg: true });
+
+        if (scale < 1 && metadata.width) {
+          pipeline = pipeline.resize({
+            width: Math.round(metadata.width * scale),
+            withoutEnlargement: true
+          });
+        }
+
+        const newBytes = await pipeline.toBuffer();
+
+        // Nur ersetzen, wenn tatsächlich kleiner
+        if (newBytes.length < originalBytes.length) {
+          const newMeta = await sharp(newBytes).metadata();
+
+          dict.set(PDFName.of('Length'), PDFNumber.of(newBytes.length));
+          dict.set(PDFName.of('Width'), PDFNumber.of(newMeta.width));
+          dict.set(PDFName.of('Height'), PDFNumber.of(newMeta.height));
+
+          const newStream = PDFRawStream.of(dict, newBytes);
+          pdfDoc.context.assign(ref, newStream);
+          imagesProcessed++;
+        }
+      } catch (e) {
+        // Einzelnes Bild fehlgeschlagen -> überspringen, Rest der PDF bleibt unangetastet
+        continue;
+      }
+    }
 
     const compressedBytes = await pdfDoc.save({
       useObjectStreams: true,
@@ -26,7 +90,8 @@ class PDFService {
       originalSize,
       compressedSize,
       savings: parseFloat(savings),
-      compressionLevel
+      compressionLevel,
+      imagesProcessed
     };
   }
 
@@ -204,7 +269,8 @@ class PDFService {
       text
     };
   }
-async setPassword(inputPath, outputPath, password) {
+
+  async setPassword(inputPath, outputPath, password) {
     const { exec } = require('child_process');
     const util = require('util');
     const execPromise = util.promisify(exec);
@@ -228,7 +294,6 @@ async setPassword(inputPath, outputPath, password) {
     const { exec } = require('child_process');
     const util = require('util');
     const execPromise = util.promisify(exec);
-    const fsSync = require('fs');
 
     await fs.mkdir(outputDir, { recursive: true });
 
