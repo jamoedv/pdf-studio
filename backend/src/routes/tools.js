@@ -29,7 +29,7 @@ async function waitForJob(jobId, timeoutMs = 120000) {
 
 // --- Synchrone Job-basierte Tools ---
 
-router.post('/tools/compress', upload.single('file'), async (req, res, next) => {
+router.post('/compress', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich (Feld "file")' });
     const { compressionLevel = 'medium' } = req.body;
@@ -39,7 +39,7 @@ router.post('/tools/compress', upload.single('file'), async (req, res, next) => 
   } catch (error) { next(error); }
 });
 
-router.post('/tools/merge', upload.array('files', 10), async (req, res, next) => {
+router.post('/merge', upload.array('files', 10), async (req, res, next) => {
   try {
     if (!req.files || req.files.length < 2) return res.status(400).json({ error: 'Mindestens 2 Dateien erforderlich (Feld "files")' });
     const inputPaths = req.files.map(f => f.path);
@@ -49,7 +49,7 @@ router.post('/tools/merge', upload.array('files', 10), async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-router.post('/tools/split', upload.single('file'), async (req, res, next) => {
+router.post('/split', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { mode = 'every', pagesPerSplit = 1, ranges = '' } = req.body;
@@ -60,7 +60,7 @@ router.post('/tools/split', upload.single('file'), async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post('/tools/convert-images-to-pdf', upload.array('files', 10), async (req, res, next) => {
+router.post('/convert-images-to-pdf', upload.array('files', 10), async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Mindestens 1 Bild erforderlich' });
     const inputPaths = req.files.map(f => f.path);
@@ -70,7 +70,7 @@ router.post('/tools/convert-images-to-pdf', upload.array('files', 10), async (re
   } catch (error) { next(error); }
 });
 
-router.post('/tools/convert-pdf-to-images', upload.single('file'), async (req, res, next) => {
+router.post('/convert-pdf-to-images', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { format = 'jpeg' } = req.body;
@@ -81,7 +81,7 @@ router.post('/tools/convert-pdf-to-images', upload.single('file'), async (req, r
   } catch (error) { next(error); }
 });
 
-router.post('/tools/rotate', upload.single('file'), async (req, res, next) => {
+router.post('/rotate', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { degrees = 90 } = req.body;
@@ -91,7 +91,7 @@ router.post('/tools/rotate', upload.single('file'), async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post('/tools/watermark', upload.single('file'), async (req, res, next) => {
+router.post('/watermark', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { text = 'CONFIDENTIAL' } = req.body;
@@ -101,7 +101,7 @@ router.post('/tools/watermark', upload.single('file'), async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-router.post('/tools/set-password', upload.single('file'), async (req, res, next) => {
+router.post('/set-password', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { password } = req.body;
@@ -112,7 +112,7 @@ router.post('/tools/set-password', upload.single('file'), async (req, res, next)
   } catch (error) { next(error); }
 });
 
-router.post('/tools/remove-password', upload.single('file'), async (req, res, next) => {
+router.post('/remove-password', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { password } = req.body;
@@ -123,7 +123,7 @@ router.post('/tools/remove-password', upload.single('file'), async (req, res, ne
   } catch (error) { next(error); }
 });
 
-router.post('/tools/metadata', upload.single('file'), async (req, res, next) => {
+router.post('/metadata', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { title, author, subject } = req.body;
@@ -133,7 +133,7 @@ router.post('/tools/metadata', upload.single('file'), async (req, res, next) => 
   } catch (error) { next(error); }
 });
 
-router.post('/tools/ocr', upload.single('file'), async (req, res, next) => {
+router.post('/ocr', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const { language = 'deu+eng' } = req.body;
@@ -143,7 +143,7 @@ router.post('/tools/ocr', upload.single('file'), async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post('/tools/redact', upload.single('file'), async (req, res, next) => {
+router.post('/redact', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const useAI = req.body.useAI !== 'false';
@@ -160,7 +160,7 @@ router.post('/tools/redact', upload.single('file'), async (req, res, next) => {
 
 // --- Direkte (nicht-Queue-basierte) Tools ---
 
-router.post('/tools/summarize', upload.single('file'), async (req, res, next) => {
+router.post('/summarize', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const result = await pdfService.summarizePDF(req.file.path);
@@ -168,7 +168,7 @@ router.post('/tools/summarize', upload.single('file'), async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-router.post('/tools/extract-keyvalues', upload.single('file'), async (req, res, next) => {
+router.post('/extract-keyvalues', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const result = await pdfService.extractKeyValues(req.file.path, false, null);
@@ -176,7 +176,7 @@ router.post('/tools/extract-keyvalues', upload.single('file'), async (req, res, 
   } catch (error) { next(error); }
 });
 
-router.post('/tools/extract-standards', upload.single('file'), async (req, res, next) => {
+router.post('/extract-standards', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const result = await pdfService.extractStandards(req.file.path, false, null);
@@ -184,7 +184,7 @@ router.post('/tools/extract-standards', upload.single('file'), async (req, res, 
   } catch (error) { next(error); }
 });
 
-router.post('/tools/extract-tables', upload.single('file'), async (req, res, next) => {
+router.post('/extract-tables', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Datei erforderlich' });
     const outputPath = path.join(process.env.PROCESSED_DIR || 'processed', `tables_${Date.now()}.xlsx`);
@@ -193,7 +193,7 @@ router.post('/tools/extract-tables', upload.single('file'), async (req, res, nex
   } catch (error) { next(error); }
 });
 
-router.post('/tools/compare', upload.fields([{ name: 'fileA', maxCount: 1 }, { name: 'fileB', maxCount: 1 }]), async (req, res, next) => {
+router.post('/compare', upload.fields([{ name: 'fileA', maxCount: 1 }, { name: 'fileB', maxCount: 1 }]), async (req, res, next) => {
   try {
     if (!req.files?.fileA || !req.files?.fileB) return res.status(400).json({ error: 'Beide Dateien (fileA, fileB) erforderlich' });
     const result = await pdfService.compareRevisions(req.files.fileA[0].path, req.files.fileB[0].path, false, null);
