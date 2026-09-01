@@ -1,0 +1,405 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PDF Studio Tools",
+    "description": "Werkzeuge zur Verarbeitung und Analyse von PDF-Dokumenten: Komprimieren, Zusammenführen, Aufteilen, Konvertieren, Drehen, Wasserzeichen, Passwortschutz, Metadaten, OCR, Redaktion sensibler Daten, sowie Analyse (Zusammenfassung, technische Kennwerte, Normen-Referenzen, Tabellen-Extraktion, Revisions-Vergleich).",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://pdf-studio-production-4d6c.up.railway.app/api/v1" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    }
+  },
+  "security": [{ "ApiKeyAuth": [] }],
+  "paths": {
+    "/tools/compress": {
+      "post": {
+        "operationId": "compressPdf",
+        "summary": "PDF komprimieren",
+        "description": "Reduziert die Dateigröße eines PDFs durch Bildkompression. Nützlich wenn ein PDF zu groß für E-Mail-Versand oder Speicherlimits ist.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary", "description": "Die zu komprimierende PDF-Datei" },
+                  "compressionLevel": { "type": "string", "enum": ["low", "medium", "high", "maximum"], "default": "medium", "description": "Kompressionsstärke, höher = kleinere Datei aber geringere Bildqualität" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Komprimiertes PDF mit Download-Link", "content": { "application/json": { "schema": { "type": "object" } } } } }
+      }
+    },
+    "/tools/merge": {
+      "post": {
+        "operationId": "mergePdfs",
+        "summary": "Mehrere PDFs zusammenführen",
+        "description": "Kombiniert mehrere PDF-Dateien zu einem einzigen Dokument, in der Reihenfolge der Übergabe.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": { "type": "array", "items": { "type": "string", "format": "binary" }, "description": "Mindestens 2 PDF-Dateien in gewünschter Reihenfolge" }
+                },
+                "required": ["files"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Zusammengeführtes PDF mit Download-Link" } }
+      }
+    },
+    "/tools/split": {
+      "post": {
+        "operationId": "splitPdf",
+        "summary": "PDF in mehrere Dateien aufteilen",
+        "description": "Teilt ein PDF entweder nach fester Seitenanzahl pro Datei, oder extrahiert bestimmte Seitenbereiche als eine neue Datei.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "mode": { "type": "string", "enum": ["every", "ranges"], "default": "every", "description": "'every' teilt nach fester Seitenzahl, 'ranges' extrahiert bestimmte Seiten in eine Datei" },
+                  "pagesPerSplit": { "type": "integer", "default": 1, "description": "Nur bei mode=every: Seiten pro Ausgabedatei" },
+                  "ranges": { "type": "string", "description": "Nur bei mode=ranges: z.B. '1-3,5,8-10'" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Liste der erzeugten Dateien mit Download-Links" } }
+      }
+    },
+    "/tools/convert-images-to-pdf": {
+      "post": {
+        "operationId": "convertImagesToPdf",
+        "summary": "Bilder zu PDF konvertieren",
+        "description": "Wandelt eine oder mehrere JPEG/PNG-Bilddateien in ein einziges PDF-Dokument um, eine Seite pro Bild.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": { "type": "array", "items": { "type": "string", "format": "binary" }, "description": "JPEG/PNG-Bilddateien" }
+                },
+                "required": ["files"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Erzeugtes PDF mit Download-Link" } }
+      }
+    },
+    "/tools/convert-pdf-to-images": {
+      "post": {
+        "operationId": "convertPdfToImages",
+        "summary": "PDF zu Bildern konvertieren",
+        "description": "Wandelt jede Seite eines PDFs in eine einzelne Bilddatei um (JPEG oder PNG).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "format": { "type": "string", "enum": ["jpeg", "png"], "default": "jpeg" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Liste der erzeugten Bilddateien mit Download-Links" } }
+      }
+    },
+    "/tools/rotate": {
+      "post": {
+        "operationId": "rotatePdf",
+        "summary": "PDF-Seiten drehen",
+        "description": "Dreht alle Seiten eines PDFs um einen festen Winkel.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "degrees": { "type": "integer", "enum": [90, 180, 270], "default": 90 }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Gedrehtes PDF mit Download-Link" } }
+      }
+    },
+    "/tools/watermark": {
+      "post": {
+        "operationId": "addWatermark",
+        "summary": "Wasserzeichen hinzufügen",
+        "description": "Legt einen diagonalen, halbtransparenten Textbereich (z.B. 'ENTWURF' oder 'VERTRAULICH') über alle Seiten eines PDFs.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "text": { "type": "string", "default": "CONFIDENTIAL", "description": "Der Wasserzeichen-Text" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "PDF mit Wasserzeichen und Download-Link" } }
+      }
+    },
+    "/tools/set-password": {
+      "post": {
+        "operationId": "setPdfPassword",
+        "summary": "PDF mit Passwort schützen",
+        "description": "Verschlüsselt ein PDF mit AES-256 und einem vom Nutzer angegebenen Passwort.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "password": { "type": "string", "description": "Das zu setzende Passwort" }
+                },
+                "required": ["file", "password"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Passwortgeschütztes PDF mit Download-Link" } }
+      }
+    },
+    "/tools/remove-password": {
+      "post": {
+        "operationId": "removePdfPassword",
+        "summary": "PDF-Passwortschutz entfernen",
+        "description": "Entfernt den Passwortschutz eines PDFs, sofern das aktuelle Passwort bekannt ist.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "password": { "type": "string", "description": "Das aktuelle Passwort des PDFs" }
+                },
+                "required": ["file", "password"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Entschütztes PDF mit Download-Link" } }
+      }
+    },
+    "/tools/metadata": {
+      "post": {
+        "operationId": "setPdfMetadata",
+        "summary": "PDF-Metadaten setzen",
+        "description": "Setzt Titel, Autor und Betreff in den Dokumenteigenschaften eines PDFs.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "title": { "type": "string" },
+                  "author": { "type": "string" },
+                  "subject": { "type": "string" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "PDF mit aktualisierten Metadaten und Download-Link" } }
+      }
+    },
+    "/tools/ocr": {
+      "post": {
+        "operationId": "ocrPdf",
+        "summary": "Texterkennung (OCR) auf PDF anwenden",
+        "description": "Macht ein gescanntes, nicht-durchsuchbares PDF durchsuchbar und kopierbar, indem eine unsichtbare Text-Ebene über die erkannten Zeichen gelegt wird.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "language": { "type": "string", "enum": ["deu", "eng", "deu+eng"], "default": "deu+eng" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Durchsuchbares PDF mit Download-Link" } }
+      }
+    },
+    "/tools/redact": {
+      "post": {
+        "operationId": "redactPdf",
+        "summary": "Sensible Daten aus PDF entfernen (echte Redaktion)",
+        "description": "Erkennt und entfernt sensible Informationen (Namen, Adressen, IBANs, E-Mails, Telefonnummern, oder benutzerdefinierte Begriffe) dauerhaft aus einem PDF. Das Ergebnis ist bildbasiert — der Text ist wirklich entfernt, nicht nur visuell überdeckt.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "useAI": { "type": "boolean", "default": true, "description": "KI-gestützte Erkennung von Namen/Adressen zusätzlich zu Regex-Mustern nutzen" },
+                  "customTerms": { "type": "string", "description": "Kommagetrennte Liste zusätzlicher Suchbegriffe, z.B. 'Projektname X, Prüfnummer'" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Redigiertes PDF mit Anzahl gefundener Stellen und Download-Link" } }
+      }
+    },
+    "/tools/summarize": {
+      "post": {
+        "operationId": "summarizePdf",
+        "summary": "PDF zusammenfassen",
+        "description": "Erstellt eine kurze Zusammenfassung und Kernpunkte des Dokumentinhalts.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": { "file": { "type": "string", "format": "binary" } },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Zusammenfassung, Kernpunkte und Dokumenttyp" } }
+      }
+    },
+    "/tools/extract-keyvalues": {
+      "post": {
+        "operationId": "extractKeyValues",
+        "summary": "Technische Kennwerte extrahieren",
+        "description": "Findet strukturierte Kennwerte in technischen Dokumenten wie Datenblättern: Teilenummer, Toleranzen, Material, Maße, Hersteller, etc.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": { "file": { "type": "string", "format": "binary" } },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Liste der gefundenen Kennwerte als Schlüssel-Wert-Paare" } }
+      }
+    },
+    "/tools/extract-standards": {
+      "post": {
+        "operationId": "extractStandards",
+        "summary": "Normen-Referenzen finden",
+        "description": "Findet Referenzen auf technische Normen und Standards (ISO, DIN, EN, IEC, etc.) in einem Dokument.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": { "file": { "type": "string", "format": "binary" } },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Liste der gefundenen Normen-Referenzen mit Kontext" } }
+      }
+    },
+    "/tools/extract-tables": {
+      "post": {
+        "operationId": "extractTables",
+        "summary": "Tabellen aus PDF extrahieren",
+        "description": "Erkennt Tabellen in einem PDF-Dokument und exportiert sie als Excel-Datei.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": { "file": { "type": "string", "format": "binary" } },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Anzahl gefundener Tabellen und Download-Link zur Excel-Datei" } }
+      }
+    },
+    "/tools/compare": {
+      "post": {
+        "operationId": "comparePdfVersions",
+        "summary": "Zwei PDF-Versionen vergleichen",
+        "description": "Vergleicht den Textinhalt zweier PDF-Versionen und zeigt Ergänzungen, Entfernungen und eine KI-generierte Zusammenfassung der inhaltlichen Änderungen.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fileA": { "type": "string", "format": "binary", "description": "Ältere Version" },
+                  "fileB": { "type": "string", "format": "binary", "description": "Neuere Version" }
+                },
+                "required": ["fileA", "fileB"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Änderungs-Segmente und Zusammenfassung" } }
+      }
+    }
+  }
+}

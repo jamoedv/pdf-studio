@@ -268,6 +268,15 @@ pdfQueue.process('workflow', async (job) => {
   return { steps: stepResults, outputPath: currentPath, multiOutput: false };
 });
 
+pdfQueue.process('redact', async (job) => {
+  const { inputPath, options } = job.data;
+  const outputPath = path.join(processedDir, `redacted_${uuidv4()}.pdf`);
+  job.progress(20);
+  const result = await pdfService.redactPDF(inputPath, outputPath, options);
+  job.progress(100);
+  return { ...result, outputPath };
+});
+
 pdfQueue.on('completed', (job, result) => {
   logHistory(job, result);
 });

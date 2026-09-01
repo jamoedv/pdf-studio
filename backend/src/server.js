@@ -17,6 +17,8 @@ const chatRoutes = require('./routes/chat');
 const templatesRoutes = require('./routes/templates');
 const historyRoutes = require('./routes/history');
 const extractRoutes = require('./routes/extract');
+const intelligenceRoutes = require('./routes/intelligence');
+const toolsRoutes = require('./routes/tools');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -54,11 +56,14 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/outlook', express.static(path.join(__dirname, '..', 'public', 'outlook')));
+app.use('/openapi', express.static(path.join(__dirname, '..', 'public', 'openapi')));
 app.use('/api/v1', apiRoutes);
 app.use('/api/v1', chatRoutes);
 app.use('/api/v1', templatesRoutes);
 app.use('/api/v1', historyRoutes);
 app.use('/api/v1', extractRoutes);
+app.use('/api/v1', intelligenceRoutes);
+app.use('/api/v1', toolsRoutes);
 
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

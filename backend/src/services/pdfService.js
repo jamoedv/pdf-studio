@@ -364,15 +364,6 @@ class PDFService {
     return result.text || '';
   }
 
-  sanitizeForPDF(text) {
-    if (!text) return '';
-    return text
-      .replace(/µ/g, 'u')
-      .replace(/±/g, '+/-')
-      .replace(/°/g, ' deg')
-      .replace(/[^\x00-\x7F\u00A0-\u00FF]/g, '?');
-  }
-
   async generateReportPDF(outputPath, title, sections) {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -387,7 +378,7 @@ class PDFService {
       }
     };
 
-    page.drawText(title, { x: 50, y, size: 18, font: boldFont });
+    page.drawText(this.sanitizeForPDF(title), { x: 50, y, size: 18, font: boldFont });
     y -= 30;
     page.drawText(`Erstellt am ${new Date().toLocaleDateString('de-DE')}`, { x: 50, y, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
     y -= 30;
@@ -410,6 +401,15 @@ class PDFService {
     const bytes = await doc.save();
     await fs.writeFile(outputPath, bytes);
     return outputPath;
+  }
+
+  sanitizeForPDF(text) {
+    if (!text) return '';
+    return text
+      .replace(/µ/g, 'u')
+      .replace(/±/g, '+/-')
+      .replace(/°/g, ' deg')
+      .replace(/[^\x00-\x7F\u00A0-\u00FF]/g, '?');
   }
 
   async extractTables(inputPath, outputPath) {
@@ -600,6 +600,274 @@ Nur tatsächlich im Text vorhandene, klar erkennbare Normen-Referenzen. Keine Du
     }
 
     return result;
+  }
+
+  async summarizePDF(inputPath) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
+
+    if (!text.trim()) {
+      throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
+    }
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 600,
+      system: `Du fasst Dokumente knapp und praezise auf Deutsch zusammen.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
+{
+  "summary": "3-5 Saetze Zusammenfassung",
+  "keyPoints": ["wichtigster Punkt 1", "Punkt 2", "Punkt 3"],
+  "documentType": "kurze Einschaetzung, z.B. Vertrag/Bericht/Datenblatt"
+}`,
+      messages: [{ role: 'user', content: text }]
+    });
+
+    const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    return parseClaudeJSON(responseText);
+  }
+
+  async getWordPositions(inputPath) {
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    const xml2js = require('xml2js');
+
+    const { stdout } = await execPromise(`pdftotext -bbox-layout "${inputPath}" -`, { maxBuffer: 1024 * 1024 * 20 });
+
+    const parser = new xml2js.Parser({ explicitCharkey: false });
+    const parsed = await parser.parseStringPromise(stdout);
+
+    const pages = [];
+    const docPages = parsed.html.body[0].doc[0].page || [];
+
+    for (const page of docPages) {
+      const pageWidth = parseFloat(page.$.width);
+      const pageHeight = parseFloat(page.$.height);
+      const words = [];
+
+      const flows = page.flow || [];
+      for (const flow of flows) {
+        const blocks = flow.block || [];
+        for (const block of blocks) {
+          const lines = block.line || [];
+          for (const line of lines) {
+            const lineWords = line.word || [];
+            for (const word of lineWords) {
+              const text = typeof word === 'string' ? word : (word._ || '');
+              words.push({
+                text,
+                xMin: parseFloat(word.$.xMin),
+                yMin: parseFloat(word.$.yMin),
+                xMax: parseFloat(word.$.xMax),
+                yMax: parseFloat(word.$.yMax)
+              });
+            }
+          }
+        }
+      }
+
+      pages.push({ width: pageWidth, height: pageHeight, words });
+    }
+
+    return pages;
+  }
+
+  findSensitiveMatches(pages, customTerms = []) {
+    const ibanRegex = /\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b/g;
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+    const phoneRegex = /\b(?:\+\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}\b/g;
+
+    const matches = [];
+
+    pages.forEach((page, pageIndex) => {
+      const fullText = page.words.map(w => w.text).join(' ');
+
+      const findAndMark = (regex, type) => {
+        let m;
+        while ((m = regex.exec(fullText)) !== null) {
+          matches.push({ pageIndex, matchedText: m[0], type });
+        }
+      };
+
+      findAndMark(ibanRegex, 'iban');
+      findAndMark(emailRegex, 'email');
+      findAndMark(phoneRegex, 'phone');
+
+      customTerms.forEach(term => {
+        if (term && fullText.includes(term)) {
+          matches.push({ pageIndex, matchedText: term, type: 'custom' });
+        }
+      });
+    });
+
+    return matches;
+  }
+
+  async findSensitiveNamesWithAI(pages) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const fullText = pages.map(p => p.words.map(w => w.text).join(' ')).join('\n').slice(0, 12000);
+
+    if (!fullText.trim()) return [];
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1000,
+      system: `Finde Personennamen und Adressen in diesem Dokumenttext, die als sensible/personenbezogene Daten geschwärzt werden sollten.
+
+Antworte AUSSCHLIESSLICH mit JSON: {"terms": ["exakter Name 1", "exakte Adresse 2"]}
+
+Gib NUR exakte Textstellen zurück, die WÖRTLICH im Text vorkommen. Keine allgemeinen Begriffe, keine Firmennamen, keine Produktbezeichnungen — nur Personennamen und private Adressen. Wenn nichts gefunden wird, leeres Array.`,
+      messages: [{ role: 'user', content: fullText }]
+    });
+
+    const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    try {
+      const parsed = parseClaudeJSON(responseText);
+      return parsed.terms || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async findValuesForCustomTerms(pages, customTerms) {
+    if (!customTerms || customTerms.length === 0) return [];
+
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const fullText = pages.map(p => p.words.map(w => w.text).join(' ')).join('\n').slice(0, 12000);
+    if (!fullText.trim()) return [];
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1000,
+      system: `Der Nutzer hat folgende Suchbegriffe angegeben, die auf sensible Informationen hinweisen (z.B. ein Spaltenname einer Tabelle, ein Feldname, ein Themenbereich): ${customTerms.join(', ')}.
+
+Finde alle EXAKTEN Werte im Dokumenttext, die inhaltlich zu diesen Begriffen gehoeren. Beispiel: wenn "Pruefnummer" angegeben ist und im Text Werte wie "P-005", "P-006" als Pruefnummern vorkommen, gib genau diese Werte zurueck (nicht das Wort "Pruefnummer" selbst).
+
+Antworte AUSSCHLIESSLICH mit JSON: {"terms": ["Wert1", "Wert2"]}
+
+Nur woertlich im Text vorkommende Werte. Wenn nichts Passendes gefunden wird, leeres Array.`,
+      messages: [{ role: 'user', content: fullText }]
+    });
+
+    const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    try {
+      const parsed = parseClaudeJSON(responseText);
+      return parsed.terms || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  findWordBoxesForMatches(pages, matches) {
+    const boxesByPage = {};
+
+    matches.forEach(match => {
+      const page = pages[match.pageIndex];
+      if (!page) return;
+
+      const searchWords = match.matchedText.split(/\s+/).filter(Boolean);
+      if (searchWords.length === 0) return;
+
+      for (let i = 0; i <= page.words.length - searchWords.length; i++) {
+        let allMatch = true;
+        for (let j = 0; j < searchWords.length; j++) {
+          const pageWord = page.words[i + j].text.replace(/[.,;:!?]$/, '');
+          if (!pageWord.includes(searchWords[j].replace(/[.,;:!?]$/, ''))) {
+            allMatch = false;
+            break;
+          }
+        }
+        if (allMatch) {
+          const wordsInMatch = page.words.slice(i, i + searchWords.length);
+          const xMin = Math.min(...wordsInMatch.map(w => w.xMin));
+          const yMin = Math.min(...wordsInMatch.map(w => w.yMin));
+          const xMax = Math.max(...wordsInMatch.map(w => w.xMax));
+          const yMax = Math.max(...wordsInMatch.map(w => w.yMax));
+
+          if (!boxesByPage[match.pageIndex]) boxesByPage[match.pageIndex] = [];
+          boxesByPage[match.pageIndex].push({ xMin, yMin, xMax, yMax, pageWidth: page.width, pageHeight: page.height });
+        }
+      }
+    });
+
+    return boxesByPage;
+  }
+
+  async redactPDF(inputPath, outputPath, options = {}) {
+    const { useAI = true, customTerms = [] } = options;
+    const DPI = 150;
+
+    const pages = await this.getWordPositions(inputPath);
+    const regexMatches = this.findSensitiveMatches(pages, customTerms);
+    const aiTerms = useAI ? await this.findSensitiveNamesWithAI(pages) : [];
+    const aiMatches = this.findSensitiveMatches(pages, aiTerms);
+    const customValueTerms = await this.findValuesForCustomTerms(pages, customTerms);
+    const customValueMatches = this.findSensitiveMatches(pages, customValueTerms);
+    const allMatches = [...regexMatches, ...aiMatches, ...customValueMatches];
+
+    const boxesByPage = this.findWordBoxesForMatches(pages, allMatches);
+    const totalRedactions = Object.values(boxesByPage).reduce((sum, arr) => sum + arr.length, 0);
+
+    const tmpDir = path.join(path.dirname(outputPath), `redact_tmp_${Date.now()}`);
+    await fs.mkdir(tmpDir, { recursive: true });
+
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    await execPromise(`pdftoppm -jpeg -r ${DPI} "${inputPath}" "${path.join(tmpDir, 'page')}"`);
+
+    const allFiles = await fs.readdir(tmpDir);
+    const imageFiles = allFiles.filter(f => f.startsWith('page')).sort();
+
+    const redactedImagePaths = [];
+
+    for (let i = 0; i < imageFiles.length; i++) {
+      const imgPath = path.join(tmpDir, imageFiles[i]);
+      const boxes = boxesByPage[i] || [];
+
+      let image = sharp(imgPath);
+      const metadata = await image.metadata();
+      const scaleX = metadata.width / (boxes[0]?.pageWidth || metadata.width);
+      const scaleY = metadata.height / (boxes[0]?.pageHeight || metadata.height);
+
+      if (boxes.length > 0) {
+        const svgRects = boxes.map(b => {
+          const x = b.xMin * scaleX;
+          const y = b.yMin * scaleY;
+          const w = (b.xMax - b.xMin) * scaleX;
+          const h = (b.yMax - b.yMin) * scaleY;
+          return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="black"/>`;
+        }).join('');
+
+        const svgOverlay = Buffer.from(
+          `<svg width="${metadata.width}" height="${metadata.height}">${svgRects}</svg>`
+        );
+
+        image = image.composite([{ input: svgOverlay, top: 0, left: 0 }]);
+      }
+
+      const redactedPath = path.join(tmpDir, `redacted_${i}.jpg`);
+      await image.jpeg({ quality: 90 }).toFile(redactedPath);
+      redactedImagePaths.push(redactedPath);
+    }
+
+    const result = await this.imagesToPDF(redactedImagePaths, outputPath);
+
+    await fs.rm(tmpDir, { recursive: true, force: true });
+
+    return {
+      pageCount: result.pageCount,
+      redactionCount: totalRedactions,
+      foundTerms: [...new Set(allMatches.map(m => m.matchedText))]
+    };
   }
 }
 

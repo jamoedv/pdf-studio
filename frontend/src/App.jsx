@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -41,10 +41,12 @@ const categories = [
     label: 'Analyse',
     tabs: [
       { id: 'ocr', icon: ScanText, label: 'OCR' },
+      { id: 'summarize', icon: MessageSquareText, label: 'Zusammenfassung' },
       { id: 'extract-tables', icon: Table2, label: 'Tabellen' },
       { id: 'extract-keyvalues', icon: KeyRound, label: 'Kennwerte' },
       { id: 'compare', icon: GitCompare, label: 'Vergleich' },
       { id: 'extract-standards', icon: BookMarked, label: 'Normen' },
+      { id: 'redact', icon: ShieldOff, label: 'Redaktion' },
     ]
   }
 ];
@@ -87,8 +89,10 @@ export default function App() {
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
+  const [redactUseAI, setRedactUseAI] = useState(true);
+  const [redactCustomTerms, setRedactCustomTerms] = useState('');
 
-  const SINGLE_FILE_TABS = ['compress', 'rotate', 'watermark', 'password', 'metadata', 'ocr'];
+  const SINGLE_FILE_TABS = ['compress', 'rotate', 'watermark', 'password', 'metadata', 'ocr', 'redact'];
   const [showHistory, setShowHistory] = useState(false);
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -377,6 +381,12 @@ export default function App() {
       formData.append('file', file);
       formData.append('language', ocrLanguage);
       endpoint = '/ocr';
+    } else if (activeTab === 'redact') {
+      formData.append('file', file);
+      formData.append('useAI', redactUseAI ? 'true' : 'false');
+      const terms = redactCustomTerms.split(',').map(t => t.trim()).filter(Boolean);
+      formData.append('customTerms', JSON.stringify(terms));
+      endpoint = '/redact';
     }
 
     return { formData, endpoint };
@@ -506,6 +516,9 @@ export default function App() {
         formData.append('fileB', compareFileB);
         formData.append('generateReport', generateReport ? 'true' : 'false');
         endpoint = '/compare';
+      } else if (activeTab === 'summarize') {
+        formData.append('file', files[0]);
+        endpoint = '/summarize';
       }
 
       const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
@@ -578,6 +591,12 @@ export default function App() {
         formData.append('file', files[0]);
         formData.append('language', ocrLanguage);
         endpoint = '/ocr';
+      } else if (activeTab === 'redact') {
+        formData.append('file', files[0]);
+        formData.append('useAI', redactUseAI ? 'true' : 'false');
+        const terms = redactCustomTerms.split(',').map(t => t.trim()).filter(Boolean);
+        formData.append('customTerms', JSON.stringify(terms));
+        endpoint = '/redact';
       }
 
       const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
@@ -602,6 +621,7 @@ export default function App() {
     password: 'geschuetzt',
     metadata: 'metadaten',
     ocr: 'ocr',
+    redact: 'redigiert',
     'extract-keyvalues': 'kennwerte_bericht',
     'extract-standards': 'normen_bericht',
     'extract-tables': 'tabellen'
@@ -644,7 +664,7 @@ export default function App() {
     setExtractionResult(null);
     setExtractionError(null);
     setBatchResults(null);
-
+    setSelectedBatchFiles({});
   };
 
   const switchCategory = (catId) => {
@@ -863,7 +883,7 @@ export default function App() {
               </label>
             )}
 
-            {(['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab)) && (
+            {(['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare', 'summarize'].includes(activeTab)) && (
               <>
                 <button
                   onClick={processExtraction}
@@ -881,6 +901,23 @@ export default function App() {
                   <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 mb-4">
                     <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                     <p className="text-sm text-red-700">{extractionError}</p>
+                  </div>
+                )}
+
+                {extractionResult && activeTab === 'summarize' && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-5">
+                    <p className="text-xs text-slate-400 mb-3">{extractionResult.documentType}</p>
+                    <p className="text-sm text-slate-700 leading-relaxed mb-4">{extractionResult.summary}</p>
+                    {extractionResult.keyPoints && extractionResult.keyPoints.length > 0 && (
+                      <div className="space-y-1.5">
+                        {extractionResult.keyPoints.map((point, i) => (
+                          <div key={i} className="flex items-start gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-900 mt-1.5 flex-shrink-0" />
+                            <p className="text-xs text-slate-600">{point}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1282,6 +1319,32 @@ export default function App() {
               </div>
             )}
 
+            {activeTab === 'redact' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="flex items-center gap-2.5 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={redactUseAI}
+                    onChange={(e) => setRedactUseAI(e.target.checked)}
+                    className="w-4 h-4 accent-blue-900"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">KI-Erkennung nutzen</p>
+                    <p className="text-xs text-slate-400">Findet automatisch Namen und Adressen im Dokument</p>
+                  </div>
+                </label>
+                <label className="text-xs text-slate-500 mb-1.5 block">Eigene Suchbegriffe (kommagetrennt)</label>
+                <input
+                  type="text"
+                  value={redactCustomTerms}
+                  onChange={(e) => setRedactCustomTerms(e.target.value)}
+                  placeholder="z.B. Projektname X, Firma Y"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="text-xs text-slate-400 mt-2">IBANs, E-Mails und Telefonnummern werden immer automatisch erkannt. Das Ergebnis-PDF ist bildbasiert — Text ist danach wirklich entfernt, nicht nur überdeckt.</p>
+              </div>
+            )}
+
             {pendingSteps && (
               <div className="mb-4 bg-blue-900 text-white rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1530,6 +1593,9 @@ export default function App() {
                                 {activeTab === 'ocr' && (
                                   <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Texterkennung angewendet</span>
                                 )}
+                                {activeTab === 'redact' && (
+                                  <span className="text-xs font-medium text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded">{r.data.redactionCount} Stelle{r.data.redactionCount !== 1 ? 'n' : ''} geschwärzt</span>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1541,7 +1607,7 @@ export default function App() {
               </>
             )}
 
-            {files.length > 0 && !['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab) && !(files.length > 1 && SINGLE_FILE_TABS.includes(activeTab) && !pendingSteps) && (
+            {files.length > 0 && !['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare', 'summarize'].includes(activeTab) && !(files.length > 1 && SINGLE_FILE_TABS.includes(activeTab) && !pendingSteps) && (
               <button
                 onClick={pendingSteps ? processWorkflow : processFiles}
                 disabled={processing || (activeTab === 'merge' && !pendingSteps && files.length < 2) || (activeTab === 'password' && !pendingSteps && !password.trim())}
@@ -1635,7 +1701,21 @@ export default function App() {
                       <p className="text-sm font-medium text-slate-700">{result.pageCount || result.totalPages}</p>
                     </div>
                   )}
+                  {result.redactionCount !== undefined && (
+                    <div>
+                      <p className="text-xs text-slate-400 mb-0.5">Geschwärzt</p>
+                      <p className="text-sm font-medium text-blue-900">{result.redactionCount} Stelle{result.redactionCount !== 1 ? 'n' : ''}</p>
+                    </div>
+                  )}
                 </div>
+
+                {result.foundTerms && result.foundTerms.length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-1.5">
+                    {result.foundTerms.map((term, i) => (
+                      <span key={i} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{term}</span>
+                    ))}
+                  </div>
+                )}
 
                 {result.files && result.files.length > 0 ? (
                   <div className="space-y-2">
