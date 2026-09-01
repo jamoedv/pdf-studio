@@ -56,7 +56,7 @@ app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/outlook', express.static(path.join(__dirname, '..', 'public', 'outlook')));
-app.use('/openapi', express.static(path.join(__dirname, '..', 'public', 'openapi')));
+app.use('/api/v1/openapi', express.static(path.join(__dirname, '..', 'public', 'openapi')));
 app.use('/api/v1', apiRoutes);
 app.use('/api/v1', chatRoutes);
 app.use('/api/v1', templatesRoutes);
