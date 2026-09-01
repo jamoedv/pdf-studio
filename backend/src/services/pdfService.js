@@ -1,7 +1,18 @@
-const { PDFDocument, rgb, PDFName, PDFNumber, PDFRawStream } = require('pdf-lib');
+const { PDFDocument, rgb, PDFName, PDFNumber, PDFRawStream, StandardFonts } = require('pdf-lib');
 const fs = require('fs').promises;
 const path = require('path');
 const sharp = require('sharp');
+
+function parseClaudeJSON(responseText) {
+  let cleaned = responseText.replace(/```json|```/g, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace === -1 || lastBrace === -1) {
+    throw new Error('Keine gültige JSON-Antwort erhalten');
+  }
+  cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  return JSON.parse(cleaned);
+}
 
 class PDFService {
 
@@ -38,7 +49,7 @@ class PDFService {
         if (!isImage || !isJpeg) continue;
 
         const originalBytes = obj.getContents();
-        if (!originalBytes || originalBytes.length < 2000) continue; // zu klein, lohnt nicht
+        if (!originalBytes || originalBytes.length < 2000) continue;
 
         const image = sharp(Buffer.from(originalBytes));
         const metadata = await image.metadata();
@@ -54,7 +65,6 @@ class PDFService {
 
         const newBytes = await pipeline.toBuffer();
 
-        // Nur ersetzen, wenn tatsächlich kleiner
         if (newBytes.length < originalBytes.length) {
           const newMeta = await sharp(newBytes).metadata();
 
@@ -67,7 +77,6 @@ class PDFService {
           imagesProcessed++;
         }
       } catch (e) {
-        // Einzelnes Bild fehlgeschlagen -> überspringen, Rest der PDF bleibt unangetastet
         continue;
       }
     }
@@ -314,6 +323,7 @@ class PDFService {
       files: imageFiles
     };
   }
+
   async setMetadata(inputPath, outputPath, meta = {}) {
     const pdfBytes = await fs.readFile(inputPath);
     const pdfDoc = await PDFDocument.load(pdfBytes);
@@ -338,13 +348,258 @@ class PDFService {
     const util = require('util');
     const execPromise = util.promisify(exec);
 
-    // ocrmypdf wäre ideal, aber falls nicht verfügbar: eigener Tesseract-Weg
     try {
       await execPromise(`ocrmypdf --language ${language} --skip-text "${inputPath}" "${outputPath}"`);
       return { ocrApplied: true, method: 'ocrmypdf' };
     } catch (e) {
       throw new Error('OCR fehlgeschlagen: ' + e.message);
     }
+  }
+
+  async extractPdfText(inputPath) {
+    const { PDFParse } = require('pdf-parse');
+    const dataBuffer = await fs.readFile(inputPath);
+    const parser = new PDFParse({ data: dataBuffer });
+    const result = await parser.getText();
+    return result.text || '';
+  }
+
+  sanitizeForPDF(text) {
+    if (!text) return '';
+    return text
+      .replace(/µ/g, 'u')
+      .replace(/±/g, '+/-')
+      .replace(/°/g, ' deg')
+      .replace(/[^\x00-\x7F\u00A0-\u00FF]/g, '?');
+  }
+
+  async generateReportPDF(outputPath, title, sections) {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+    let page = doc.addPage([595, 842]);
+    let y = 800;
+
+    const checkPageBreak = (needed = 20) => {
+      if (y < needed) {
+        page = doc.addPage([595, 842]);
+        y = 800;
+      }
+    };
+
+    page.drawText(title, { x: 50, y, size: 18, font: boldFont });
+    y -= 30;
+    page.drawText(`Erstellt am ${new Date().toLocaleDateString('de-DE')}`, { x: 50, y, size: 9, font, color: rgb(0.5, 0.5, 0.5) });
+    y -= 30;
+
+    for (const section of sections) {
+      checkPageBreak(40);
+      page.drawText(this.sanitizeForPDF(section.heading), { x: 50, y, size: 13, font: boldFont });
+      y -= 22;
+
+      for (const line of section.lines) {
+        checkPageBreak(18);
+        const safeLine = this.sanitizeForPDF(line);
+        const wrapped = safeLine.length > 95 ? safeLine.slice(0, 95) + '...' : safeLine;
+        page.drawText(wrapped, { x: 50, y, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
+        y -= 16;
+      }
+      y -= 14;
+    }
+
+    const bytes = await doc.save();
+    await fs.writeFile(outputPath, bytes);
+    return outputPath;
+  }
+
+  async extractTables(inputPath, outputPath) {
+    const XLSX = require('xlsx');
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
+
+    if (!text.trim()) {
+      throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
+    }
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 4000,
+      system: `Du extrahierst Tabellen aus technischem Dokumenttext (Datenblätter, Prüfberichte, Spezifikationen).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown):
+{
+  "tables": [
+    {
+      "title": "kurzer Titel der Tabelle",
+      "headers": ["Spalte1", "Spalte2"],
+      "rows": [["Wert1", "Wert2"]]
+    }
+  ]
+}
+
+Erkenne auch Tabellen, die durch Text-Layout angedeutet sind. Wenn keine Tabellen erkennbar sind, gib ein leeres "tables" Array zurück. Erfinde keine Werte.`,
+      messages: [{ role: 'user', content: text }]
+    });
+
+    const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    const parsed = parseClaudeJSON(responseText);
+
+    const workbook = XLSX.utils.book_new();
+    if (!parsed.tables || parsed.tables.length === 0) {
+      const ws = XLSX.utils.aoa_to_sheet([['Keine Tabellen gefunden']]);
+      XLSX.utils.book_append_sheet(workbook, ws, 'Ergebnis');
+    } else {
+      parsed.tables.forEach((table, i) => {
+        const sheetData = [table.headers, ...table.rows];
+        const ws = XLSX.utils.aoa_to_sheet(sheetData);
+        const sheetName = (table.title || `Tabelle ${i + 1}`).slice(0, 31);
+        XLSX.utils.book_append_sheet(workbook, ws, sheetName);
+      });
+    }
+
+    XLSX.writeFile(workbook, outputPath);
+
+    return { tableCount: parsed.tables ? parsed.tables.length : 0, tables: parsed.tables || [], outputPath };
+  }
+
+  async extractKeyValues(inputPath, generateReport = false, reportOutputPath = null) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
+
+    if (!text.trim()) {
+      throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
+    }
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1024,
+      system: `Du extrahierst technische Kennwerte aus Dokumenten (Datenblätter, Zeichnungen, Spezifikationen, Prüfberichte).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
+{
+  "documentType": "Einschätzung, z.B. Datenblatt/Prüfbericht/Zeichnung/Spezifikation",
+  "fields": [{"key": "Feldname", "value": "gefundener Wert"}]
+}
+
+Achte besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Toleranzen, Maße/Dimensionen, elektrische/mechanische Kennwerte, Hersteller, Gültigkeitsdatum. Erfinde nichts.`,
+      messages: [{ role: 'user', content: text }]
+    });
+
+    const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    const result = parseClaudeJSON(responseText);
+
+    if (generateReport && reportOutputPath) {
+      const lines = result.fields && result.fields.length > 0
+        ? result.fields.map(f => `${f.key}: ${f.value}`)
+        : ['Keine Kennwerte gefunden.'];
+      await this.generateReportPDF(reportOutputPath, `Kennwerte-Bericht — ${result.documentType || ''}`, [
+        { heading: 'Extrahierte Kennwerte', lines }
+      ]);
+      result.outputPath = reportOutputPath;
+    }
+
+    return result;
+  }
+
+  async compareRevisions(pathA, pathB, generateReport = false, reportOutputPath = null) {
+    const { diffWords } = require('diff');
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const [textA, textB] = await Promise.all([
+      this.extractPdfText(pathA),
+      this.extractPdfText(pathB)
+    ]);
+
+    const diff = diffWords(textA, textB);
+    const segments = diff.map(part => ({
+      type: part.added ? 'added' : part.removed ? 'removed' : 'unchanged',
+      value: part.value
+    }));
+
+    const addedCount = segments.filter(s => s.type === 'added').length;
+    const removedCount = segments.filter(s => s.type === 'removed').length;
+
+    let summary = 'Keine wesentlichen Unterschiede gefunden.';
+    if (addedCount > 0 || removedCount > 0) {
+      const changedText = segments
+        .filter(s => s.type !== 'unchanged')
+        .map(s => `${s.type === 'added' ? '+' : '-'} ${s.value.trim()}`)
+        .join('\n')
+        .slice(0, 4000);
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 300,
+        system: 'Du bekommst eine Liste von Textänderungen zwischen zwei Dokumentversionen (+ = hinzugefügt, - = entfernt). Fasse in 2-3 Sätzen auf Deutsch zusammen, was sich inhaltlich geändert hat. Antworte NUR mit der Zusammenfassung, kein JSON, kein Markdown.',
+        messages: [{ role: 'user', content: changedText }]
+      });
+      summary = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    }
+
+    const result = { segments, summary, addedCount, removedCount };
+
+    if (generateReport && reportOutputPath) {
+      const changeLines = segments
+        .filter(s => s.type !== 'unchanged')
+        .slice(0, 100)
+        .map(s => `${s.type === 'added' ? '[+] ' : '[-] '}${s.value.trim()}`)
+        .filter(l => l.length > 4);
+
+      await this.generateReportPDF(reportOutputPath, 'Revisions-Vergleichsbericht', [
+        { heading: 'Zusammenfassung', lines: [summary, `${addedCount} Ergänzungen, ${removedCount} Entfernungen`] },
+        { heading: 'Änderungen im Detail', lines: changeLines.length > 0 ? changeLines : ['Keine Änderungen.'] }
+      ]);
+      result.outputPath = reportOutputPath;
+    }
+
+    return result;
+  }
+
+  async extractStandards(inputPath, generateReport = false, reportOutputPath = null) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
+
+    if (!text.trim()) {
+      throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
+    }
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1500,
+      system: `Du findest Normen- und Standard-Referenzen in technischen Dokumenten (z.B. ISO, DIN, EN, IEC, ANSI, ASTM, VDE, VDI).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
+{
+  "standards": [
+    {"reference": "z.B. ISO 9001:2015", "context": "kurzer Satz-Ausschnitt"}
+  ]
+}
+
+Nur tatsächlich im Text vorhandene, klar erkennbare Normen-Referenzen. Keine Duplikate. Wenn keine gefunden werden, leeres Array zurückgeben.`,
+      messages: [{ role: 'user', content: text }]
+    });
+
+    const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    const result = parseClaudeJSON(responseText);
+
+    if (generateReport && reportOutputPath) {
+      const lines = result.standards && result.standards.length > 0
+        ? result.standards.map(s => `${s.reference} — ${s.context}`)
+        : ['Keine Normen-Referenzen gefunden.'];
+      await this.generateReportPDF(reportOutputPath, 'Normen-Referenzen-Bericht', [
+        { heading: 'Gefundene Normen', lines }
+      ]);
+      result.outputPath = reportOutputPath;
+    }
+
+    return result;
   }
 }
 

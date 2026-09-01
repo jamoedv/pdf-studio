@@ -10,7 +10,11 @@ dotenv.config();
 const pdfQueue = new Queue('pdf-processing', {
   redis: process.env.REDIS_URL || 'redis://localhost:6379'
 });
+
 pdfQueue.client.setMaxListeners(30);
+
+const processedDir = process.env.PROCESSED_DIR || 'processed';
+
 async function logHistory(job, result) {
   try {
     const entry = {
@@ -22,7 +26,7 @@ async function logHistory(job, result) {
       fileCount: result.files ? result.files.length : 1
     };
     await redisClient.lpush('history', JSON.stringify(entry));
-    await redisClient.ltrim('history', 0, 49); // nur die letzten 50 behalten
+    await redisClient.ltrim('history', 0, 49);
   } catch (e) {
     console.error('History logging failed:', e.message);
   }
@@ -40,20 +44,11 @@ function buildSummary(type, data, result) {
     case 'removePassword': return `Passwort entfernt`;
     case 'pdfToImages': return `In ${result.pageCount || '?'} Bilder umgewandelt`;
     case 'metadata': return `Metadaten aktualisiert`;
+    case 'ocr': return `Texterkennung (OCR) angewendet`;
     case 'workflow': return `Workflow: ${(data.steps || []).map(s => s.action).join(' → ')}`;
     default: return type;
   }
 }
-
-pdfQueue.process('metadata', async (job) => {
-  const { inputPath, meta } = job.data;
-  const outputPath = path.join(processedDir, `metadata_${uuidv4()}.pdf`);
-  job.progress(20);
-  const result = await pdfService.setMetadata(inputPath, outputPath, meta);
-  job.progress(100);
-  return { ...result, outputPath };
-});
-const processedDir = process.env.PROCESSED_DIR || 'processed';
 
 pdfQueue.process('compress', async (job) => {
   const { inputPath, compressionLevel } = job.data;
@@ -136,6 +131,24 @@ pdfQueue.process('pdfToImages', async (job) => {
   return result;
 });
 
+pdfQueue.process('metadata', async (job) => {
+  const { inputPath, meta } = job.data;
+  const outputPath = path.join(processedDir, `metadata_${uuidv4()}.pdf`);
+  job.progress(20);
+  const result = await pdfService.setMetadata(inputPath, outputPath, meta);
+  job.progress(100);
+  return { ...result, outputPath };
+});
+
+pdfQueue.process('ocr', async (job) => {
+  const { inputPath, language } = job.data;
+  const outputPath = path.join(processedDir, `ocr_${uuidv4()}.pdf`);
+  job.progress(20);
+  const result = await pdfService.ocrPDF(inputPath, outputPath, language);
+  job.progress(100);
+  return { ...result, outputPath };
+});
+
 // Mehrstufiger Workflow: führt mehrere Aktionen nacheinander aus,
 // Ergebnis von Schritt N wird automatisch Eingabe von Schritt N+1
 pdfQueue.process('workflow', async (job) => {
@@ -174,6 +187,7 @@ pdfQueue.process('workflow', async (job) => {
           currentPaths = null;
         } else {
           if (!isLast) throw new Error('PDF zu Bildern kann nur als letzter Schritt genutzt werden');
+          const outDir = path.join(processedDir, `wf_images_${uuidv4()}`);
           const wfPrefix = `wf_${uuidv4().slice(0, 8)}`;
           result = await pdfService.pdfToImages(currentPath, processedDir, 'jpeg', wfPrefix);
           stepResults.push({ action: step.action, ...result });
@@ -211,6 +225,30 @@ pdfQueue.process('workflow', async (job) => {
         currentPath = outputPath;
         break;
       }
+      case 'metadata': {
+        outputPath = path.join(processedDir, `wf_metadata_${uuidv4()}.pdf`);
+        result = await pdfService.setMetadata(currentPath, outputPath, step.options || {});
+        currentPath = outputPath;
+        break;
+      }
+      case 'ocr': {
+        outputPath = path.join(processedDir, `wf_ocr_${uuidv4()}.pdf`);
+        result = await pdfService.ocrPDF(currentPath, outputPath, step.options?.language || 'deu+eng');
+        currentPath = outputPath;
+        break;
+      }
+      case 'extract-keyvalues': {
+        const reportPath = path.join(processedDir, `wf_keyvalues_${uuidv4()}.pdf`);
+        result = await pdfService.extractKeyValues(currentPath, true, reportPath);
+        currentPath = reportPath;
+        break;
+      }
+      case 'extract-standards': {
+        const reportPath = path.join(processedDir, `wf_standards_${uuidv4()}.pdf`);
+        result = await pdfService.extractStandards(currentPath, true, reportPath);
+        currentPath = reportPath;
+        break;
+      }
       case 'split': {
         if (!isLast) throw new Error('Aufteilen kann nur als letzter Schritt genutzt werden');
         const prefix = uuidv4().slice(0, 8);
@@ -219,19 +257,7 @@ pdfQueue.process('workflow', async (job) => {
         job.progress(100);
         return { steps: stepResults, files: result.files, multiOutput: true };
       }
-      case 'metadata': {
-        outputPath = path.join(processedDir, `wf_metadata_${uuidv4()}.pdf`);
-        result = await pdfService.setMetadata(currentPath, outputPath, step.options || {});
-        currentPath = outputPath;
-        break;
-      }
-       case 'ocr': {
-        outputPath = path.join(processedDir, `wf_ocr_${uuidv4()}.pdf`);
-        result = await pdfService.ocrPDF(currentPath, outputPath, step.options?.language || 'deu+eng');
-        currentPath = outputPath;
-        break;
-      }
-   default:
+      default:
         throw new Error(`Unbekannte Aktion: ${step.action}`);
     }
 
@@ -245,12 +271,5 @@ pdfQueue.process('workflow', async (job) => {
 pdfQueue.on('completed', (job, result) => {
   logHistory(job, result);
 });
-pdfQueue.process('ocr', async (job) => {
-  const { inputPath, language } = job.data;
-  const outputPath = path.join(processedDir, `ocr_${uuidv4()}.pdf`);
-  job.progress(20);
-  const result = await pdfService.ocrPDF(inputPath, outputPath, language);
-  job.progress(100);
-  return { ...result, outputPath };
-});
+
 console.log('🔧 PDF Worker started, waiting for jobs...');

@@ -16,6 +16,7 @@ const apiRoutes = require('./routes/api');
 const chatRoutes = require('./routes/chat');
 const templatesRoutes = require('./routes/templates');
 const historyRoutes = require('./routes/history');
+const extractRoutes = require('./routes/extract');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -57,6 +58,7 @@ app.use('/api/v1', apiRoutes);
 app.use('/api/v1', chatRoutes);
 app.use('/api/v1', templatesRoutes);
 app.use('/api/v1', historyRoutes);
+app.use('/api/v1', extractRoutes);
 
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

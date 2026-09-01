@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText } from 'lucide-react';
+import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -15,20 +15,52 @@ const MergeIconSVG = () => (
   </svg>
 );
 
-const tabs = [
-  { id: 'compress', icon: CompressIcon, label: 'Compress' },
-  { id: 'merge', icon: MergeIconSVG, label: 'Merge' },
-  { id: 'split', icon: Scissors, label: 'Split' },
-  { id: 'convert', icon: ImageIcon, label: 'Convert' },
-  { id: 'rotate', icon: RotateCw, label: 'Rotate' },
-  { id: 'watermark', icon: Stamp, label: 'Watermark' },
-  { id: 'password', icon: Lock, label: 'Password' },
-  { id: 'metadata', icon: Tag, label: 'Metadata' },
-  { id: 'ocr', icon: ScanText, label: 'OCR' }
+const categories = [
+  {
+    id: 'basics',
+    label: 'Grundfunktionen',
+    tabs: [
+      { id: 'compress', icon: CompressIcon, label: 'Compress' },
+      { id: 'merge', icon: MergeIconSVG, label: 'Merge' },
+      { id: 'split', icon: Scissors, label: 'Split' },
+      { id: 'convert', icon: ImageIcon, label: 'Convert' },
+    ]
+  },
+  {
+    id: 'edit',
+    label: 'Bearbeiten',
+    tabs: [
+      { id: 'rotate', icon: RotateCw, label: 'Rotate' },
+      { id: 'watermark', icon: Stamp, label: 'Watermark' },
+      { id: 'password', icon: Lock, label: 'Password' },
+      { id: 'metadata', icon: Tag, label: 'Metadata' },
+    ]
+  },
+  {
+    id: 'analyze',
+    label: 'Analyse',
+    tabs: [
+      { id: 'ocr', icon: ScanText, label: 'OCR' },
+      { id: 'extract-tables', icon: Table2, label: 'Tabellen' },
+      { id: 'extract-keyvalues', icon: KeyRound, label: 'Kennwerte' },
+      { id: 'compare', icon: GitCompare, label: 'Vergleich' },
+      { id: 'extract-standards', icon: BookMarked, label: 'Normen' },
+    ]
+  }
 ];
+
+const tabs = categories.flatMap(c => c.tabs);
+
+function findCategoryForTab(tabId) {
+  const cat = categories.find(c => c.tabs.some(t => t.id === tabId));
+  return cat ? cat.id : 'basics';
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('compress');
+  const [activeCategory, setActiveCategory] = useState('basics');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
@@ -46,6 +78,17 @@ export default function App() {
   const [metaAuthor, setMetaAuthor] = useState('');
   const [metaSubject, setMetaSubject] = useState('');
   const [ocrLanguage, setOcrLanguage] = useState('deu+eng');
+  const [compareFileB, setCompareFileB] = useState(null);
+  const [extractionResult, setExtractionResult] = useState(null);
+  const [extractionLoading, setExtractionLoading] = useState(false);
+  const [extractionError, setExtractionError] = useState(null);
+  const [generateReport, setGenerateReport] = useState(false);
+  const [batchResults, setBatchResults] = useState(null);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
+
+  const SINGLE_FILE_TABS = ['compress', 'rotate', 'watermark', 'password', 'metadata', 'ocr'];
   const [showHistory, setShowHistory] = useState(false);
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -224,6 +267,7 @@ export default function App() {
         if (data.steps.length === 1) {
           const step = data.steps[0];
           setActiveTab(step.action);
+          setActiveCategory(findCategoryForTab(step.action));
           if (step.options?.level) setCompressionLevel(step.options.level);
           if (step.options?.degrees) setRotateDegrees(step.options.degrees);
           if (step.options?.text) setWatermarkText(step.options.text);
@@ -271,6 +315,123 @@ export default function App() {
     }, 1500);
   };
 
+  const submitAndAwaitJob = (endpoint, formData) => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Verarbeitung fehlgeschlagen');
+        }
+        const jobData = await response.json();
+
+        const interval = setInterval(async () => {
+          try {
+            const res = await fetch(`${API_URL}/job/${jobData.jobId}`);
+            const data = await res.json();
+            if (data.status === 'completed') {
+              clearInterval(interval);
+              resolve(data.data);
+            } else if (data.status === 'failed') {
+              clearInterval(interval);
+              reject(new Error('Verarbeitung fehlgeschlagen'));
+            }
+          } catch (err) {
+            clearInterval(interval);
+            reject(err);
+          }
+        }, 1500);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
+
+  const buildSingleFileFormData = (file) => {
+    const formData = new FormData();
+    let endpoint = '';
+
+    if (activeTab === 'compress') {
+      formData.append('file', file);
+      formData.append('compressionLevel', compressionLevel);
+      endpoint = '/compress';
+    } else if (activeTab === 'rotate') {
+      formData.append('file', file);
+      formData.append('degrees', rotateDegrees);
+      endpoint = '/rotate';
+    } else if (activeTab === 'watermark') {
+      formData.append('file', file);
+      formData.append('text', watermarkText);
+      endpoint = '/watermark';
+    } else if (activeTab === 'password') {
+      formData.append('file', file);
+      formData.append('password', password);
+      endpoint = passwordMode === 'set' ? '/set-password' : '/remove-password';
+    } else if (activeTab === 'metadata') {
+      formData.append('file', file);
+      formData.append('title', metaTitle);
+      formData.append('author', metaAuthor);
+      formData.append('subject', metaSubject);
+      endpoint = '/metadata';
+    } else if (activeTab === 'ocr') {
+      formData.append('file', file);
+      formData.append('language', ocrLanguage);
+      endpoint = '/ocr';
+    }
+
+    return { formData, endpoint };
+  };
+
+  const processBatch = async () => {
+    if (files.length < 2) return;
+    if (activeTab === 'password' && !password.trim()) {
+      setError('Bitte ein Passwort eingeben.');
+      return;
+    }
+
+    setBatchProcessing(true);
+    setBatchResults(null);
+    setError(null);
+    setBatchProgress({ current: 0, total: files.length });
+
+    const results = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setBatchProgress({ current: i + 1, total: files.length });
+      try {
+        const { formData, endpoint } = buildSingleFileFormData(file);
+        const data = await submitAndAwaitJob(endpoint, formData);
+        results.push({ filename: file.name, success: true, data });
+      } catch (err) {
+        results.push({ filename: file.name, success: false, error: err.message });
+      }
+    }
+
+    setBatchResults(results);
+    setBatchProcessing(false);
+
+    const initialSelection = {};
+    results.forEach((r, i) => {
+      if (r.success) initialSelection[i] = true;
+    });
+    setSelectedBatchFiles(initialSelection);
+  };
+
+  const toggleBatchFileSelection = (index) => {
+    setSelectedBatchFiles(prev => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  const downloadSelectedBatchFiles = () => {
+    if (!batchResults) return;
+    const selected = batchResults
+      .map((r, i) => ({ ...r, index: i }))
+      .filter(r => r.success && selectedBatchFiles[r.index]);
+    selected.forEach((r, idx) => {
+      setTimeout(() => downloadFile(r.data.outputPath, buildDownloadName(r.filename, TAB_SUFFIX[activeTab])), idx * 350);
+    });
+  };
+
   const processWorkflow = async () => {
     if (files.length === 0 || !pendingSteps) return;
     setProcessing(true);
@@ -312,6 +473,54 @@ export default function App() {
     setFiles([]);
     setResult(null);
     setError(null);
+  };
+
+  const processExtraction = async () => {
+    if (activeTab === 'compare') {
+      if (files.length === 0 || !compareFileB) return;
+    } else if (files.length === 0) {
+      return;
+    }
+
+    setExtractionLoading(true);
+    setExtractionError(null);
+    setExtractionResult(null);
+
+    try {
+      let endpoint = '';
+      const formData = new FormData();
+
+      if (activeTab === 'extract-tables') {
+        files.forEach(f => formData.append('files', f));
+        endpoint = '/extract-tables';
+      } else if (activeTab === 'extract-keyvalues') {
+        files.forEach(f => formData.append('files', f));
+        formData.append('generateReport', generateReport ? 'true' : 'false');
+        endpoint = '/extract-keyvalues';
+      } else if (activeTab === 'extract-standards') {
+        files.forEach(f => formData.append('files', f));
+        formData.append('generateReport', generateReport ? 'true' : 'false');
+        endpoint = '/extract-standards';
+      } else if (activeTab === 'compare') {
+        formData.append('fileA', files[0]);
+        formData.append('fileB', compareFileB);
+        formData.append('generateReport', generateReport ? 'true' : 'false');
+        endpoint = '/compare';
+      }
+
+      const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Extraktion fehlgeschlagen');
+      }
+
+      setExtractionResult(data);
+    } catch (err) {
+      setExtractionError(err.message || 'Ein Fehler ist aufgetreten');
+    }
+
+    setExtractionLoading(false);
   };
 
   const processFiles = async () => {
@@ -386,18 +595,62 @@ export default function App() {
     }
   };
 
-  const downloadFile = (path) => {
+  const TAB_SUFFIX = {
+    compress: 'komprimiert',
+    rotate: 'gedreht',
+    watermark: 'wasserzeichen',
+    password: 'geschuetzt',
+    metadata: 'metadaten',
+    ocr: 'ocr',
+    'extract-keyvalues': 'kennwerte_bericht',
+    'extract-standards': 'normen_bericht',
+    'extract-tables': 'tabellen'
+  };
+
+  const buildDownloadName = (originalName, suffix, ext) => {
+    const base = (originalName || 'datei').replace(/\.pdf$/i, '');
+    return `${base}${suffix ? '_' + suffix : ''}.${ext || 'pdf'}`;
+  };
+
+  const downloadFile = async (path, suggestedName) => {
     const targetPath = path || result?.outputPath;
     if (!targetPath) return;
-    const filename = targetPath.split('/').pop();
-    window.open(`${API_URL}/download/${filename}`, '_blank');
+    const serverFilename = targetPath.split('/').pop();
+    const url = `${API_URL}/download/${serverFilename}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Download fehlgeschlagen');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = suggestedName || serverFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      setError('Download fehlgeschlagen. Bitte erneut versuchen.');
+    }
   };
 
   const switchTab = (tabId) => {
     setActiveTab(tabId);
+    setActiveCategory(findCategoryForTab(tabId));
     setFiles([]);
     setResult(null);
     setError(null);
+    setCompareFileB(null);
+    setExtractionResult(null);
+    setExtractionError(null);
+    setBatchResults(null);
+
+  };
+
+  const switchCategory = (catId) => {
+    setActiveCategory(catId);
+    const firstTab = categories.find(c => c.id === catId).tabs[0].id;
+    switchTab(firstTab);
   };
 
   return (
@@ -405,31 +658,45 @@ export default function App() {
       <div className="flex h-screen">
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-2xl mx-auto p-8">
-            <div className="mb-8 flex items-center justify-between">
+            <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
-                  <FileText className="w-4.5 h-4.5 text-white" />
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center shadow-sm">
+                  <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" fill="none">
+                    <path d="M6 2h8l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="white" fillOpacity="0.95" />
+                    <path d="M14 2v5h5" fill="none" stroke="#1e3a8a" strokeWidth="1.2" strokeLinejoin="round" />
+                    <path d="M8.5 13l2.3 2.3L15.5 10.5" stroke="#1e3a8a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </div>
                 <div>
-                  <h1 className="text-lg font-semibold text-slate-900 leading-tight">PDF Studio</h1>
-                  <p className="text-xs text-slate-500">Dokumente bearbeiten, lokal verarbeitet</p>
+                  <h1 className="text-base font-semibold text-slate-900 leading-tight">PDF Studio</h1>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+
+              <div className="relative">
                 <button
-                  onClick={toggleTemplates}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors border border-slate-200"
+                  onClick={() => setShowMoreMenu(prev => !prev)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
                 >
-                  <Bookmark className="w-3.5 h-3.5" />
-                  Vorlagen
+                  <MoreHorizontal className="w-4.5 h-4.5" />
                 </button>
-                <button
-                  onClick={toggleHistory}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors border border-slate-200"
-                >
-                  <History className="w-3.5 h-3.5" />
-                  Verlauf
-                </button>
+                {showMoreMenu && (
+                  <div className="absolute right-0 top-10 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-20">
+                    <button
+                      onClick={() => { toggleTemplates(); setShowMoreMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <Bookmark className="w-4 h-4" />
+                      Vorlagen
+                    </button>
+                    <button
+                      onClick={() => { toggleHistory(); setShowMoreMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <History className="w-4 h-4" />
+                      Verlauf
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -447,7 +714,7 @@ export default function App() {
                           <p className="text-xs text-slate-400">{t.steps.map(s => s.action).join(' → ')}</p>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => useTemplate(t)} className="px-2.5 py-1 bg-slate-900 text-white rounded-md text-xs font-medium hover:bg-slate-800">
+                          <button onClick={() => useTemplate(t)} className="px-2.5 py-1 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950">
                             Nutzen
                           </button>
                           <button onClick={() => deleteTemplate(t.id)} className="p-1.5 hover:bg-slate-200 rounded-md">
@@ -491,16 +758,30 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex gap-1 mb-5 p-1 bg-slate-100 rounded-lg border border-slate-200 flex-wrap">
-              {tabs.map(tab => {
+            <div className="flex gap-1 mb-3">
+              {categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => switchCategory(cat.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    activeCategory === cat.id ? 'bg-blue-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-5 mb-6 border-b border-slate-200 flex-wrap">
+              {categories.find(c => c.id === activeCategory).tabs.map(tab => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => switchTab(tab.id)}
-                    className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-md text-sm font-medium transition-all ${
-                      isActive ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'
+                    className={`flex items-center gap-1.5 pb-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                      isActive ? 'text-slate-900 border-blue-900' : 'text-slate-400 border-transparent hover:text-slate-600'
                     }`}
                   >
                     <Icon />
@@ -510,6 +791,30 @@ export default function App() {
               })}
             </div>
 
+            {activeTab === 'compare' ? (
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Version A (alt)</label>
+                  <label className="block cursor-pointer">
+                    <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center hover:border-slate-400 hover:bg-slate-50 transition-all">
+                      <Upload className="w-5 h-5 mx-auto mb-1.5 text-slate-400" />
+                      <p className="text-xs text-slate-500 truncate">{files[0] ? files[0].name : 'PDF wählen'}</p>
+                    </div>
+                    <input type="file" accept=".pdf" className="hidden" onChange={(e) => setFiles(e.target.files[0] ? [e.target.files[0]] : [])} />
+                  </label>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Version B (neu)</label>
+                  <label className="block cursor-pointer">
+                    <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center hover:border-slate-400 hover:bg-slate-50 transition-all">
+                      <Upload className="w-5 h-5 mx-auto mb-1.5 text-slate-400" />
+                      <p className="text-xs text-slate-500 truncate">{compareFileB ? compareFileB.name : 'PDF wählen'}</p>
+                    </div>
+                    <input type="file" accept=".pdf" className="hidden" onChange={(e) => setCompareFileB(e.target.files[0] || null)} />
+                  </label>
+                </div>
+              </div>
+            ) : (
             <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
               <label
                 className="block cursor-pointer group"
@@ -520,7 +825,7 @@ export default function App() {
                 <div className={`border-2 border-dashed rounded-lg p-9 text-center transition-all duration-200 ${
                   isDragging ? 'border-slate-500 bg-slate-100' : 'border-slate-200 group-hover:border-slate-400 group-hover:bg-slate-50'
                 }`}>
-                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-slate-900 flex items-center justify-center">
+                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-900 flex items-center justify-center">
                     <Upload className="w-5 h-5 text-white" />
                   </div>
                   <p className="font-medium text-slate-700 text-sm mb-1">
@@ -535,14 +840,185 @@ export default function App() {
                 <input
                   type="file"
                   onChange={handleFileUpload}
-                  multiple={activeTab === 'merge' || (activeTab === 'convert' && convertDirection === 'toPDF')}
+                  multiple={activeTab === 'merge' || (activeTab === 'convert' && convertDirection === 'toPDF') || ['extract-tables', 'extract-keyvalues', 'extract-standards', ...SINGLE_FILE_TABS].includes(activeTab)}
                   accept={activeTab === 'convert' ? (convertDirection === 'toPDF' ? '.jpg,.jpeg,.png' : '.pdf') : '.pdf'}
                   className="hidden"
                 />
               </label>
             </div>
+            )}
 
-            {files.length > 0 && (
+            {['extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab) && (
+              <label className="flex items-center gap-2.5 mb-4 bg-white border border-slate-200 rounded-xl p-4 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={generateReport}
+                  onChange={(e) => setGenerateReport(e.target.checked)}
+                  className="w-4 h-4 accent-blue-900"
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Zusätzlich PDF-Bericht erstellen</p>
+                  <p className="text-xs text-slate-400">Formatiertes PDF, das anschließend weiterverarbeitet werden kann (z.B. mit Passwort schützen)</p>
+                </div>
+              </label>
+            )}
+
+            {(['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab)) && (
+              <>
+                <button
+                  onClick={processExtraction}
+                  disabled={extractionLoading || (activeTab === 'compare' ? (files.length === 0 || !compareFileB) : files.length === 0)}
+                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
+                >
+                  {extractionLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Wird analysiert...</>
+                  ) : (
+                    <><Check className="w-4 h-4" />Analysieren</>
+                  )}
+                </button>
+
+                {extractionError && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 mb-4">
+                    <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-700">{extractionError}</p>
+                  </div>
+                )}
+
+                {extractionResult && activeTab === 'extract-keyvalues' && (
+                  <div className="space-y-3">
+                    {extractionResult.results.map((r, ri) => (
+                      <div key={ri} className="bg-white border border-slate-200 rounded-xl p-5">
+                        <p className="text-sm font-medium text-slate-700 mb-1 truncate">{r.filename}</p>
+                        {r.error ? (
+                          <p className="text-xs text-red-600">{r.error}</p>
+                        ) : (
+                          <>
+                            <p className="text-xs text-slate-400 mb-3">{r.documentType}</p>
+                            {r.fields.length === 0 ? (
+                              <p className="text-sm text-slate-400">Keine Kennwerte gefunden.</p>
+                            ) : (
+                              <div className="space-y-1.5 mb-4">
+                                {r.fields.map((f, i) => (
+                                  <div key={i} className="flex justify-between gap-4 py-1.5 border-b border-slate-100 last:border-0">
+                                    <span className="text-xs text-slate-500 flex-shrink-0">{f.key}</span>
+                                    <span className="text-xs font-medium text-slate-700 text-right">{f.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {r.outputPath && (
+                              <button
+                                onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'kennwerte_bericht'))}
+                                className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2"
+                              >
+                                <Download className="w-4 h-4" />
+                                PDF-Bericht herunterladen
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {extractionResult && activeTab === 'extract-standards' && (
+                  <div className="space-y-3">
+                    {extractionResult.results.map((r, ri) => (
+                      <div key={ri} className="bg-white border border-slate-200 rounded-xl p-5">
+                        <p className="text-sm font-medium text-slate-700 mb-3 truncate">{r.filename}</p>
+                        {r.error ? (
+                          <p className="text-xs text-red-600">{r.error}</p>
+                        ) : (
+                          <>
+                            {r.standards.length === 0 ? (
+                              <p className="text-sm text-slate-400 mb-4">Keine Normen-Referenzen gefunden.</p>
+                            ) : (
+                              <div className="space-y-2 mb-4">
+                                {r.standards.map((s, i) => (
+                                  <div key={i} className="bg-slate-50 rounded-lg p-3">
+                                    <p className="text-xs font-semibold text-slate-700 mb-1">{s.reference}</p>
+                                    <p className="text-xs text-slate-500">{s.context}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {r.outputPath && (
+                              <button
+                                onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'normen_bericht'))}
+                                className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2"
+                              >
+                                <Download className="w-4 h-4" />
+                                PDF-Bericht herunterladen
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {extractionResult && activeTab === 'extract-tables' && (
+                  <div className="space-y-3">
+                    {extractionResult.results.map((r, ri) => (
+                      <div key={ri} className="bg-white border border-slate-200 rounded-xl p-5">
+                        <p className="text-sm font-medium text-slate-700 mb-1 truncate">{r.filename}</p>
+                        {r.error ? (
+                          <p className="text-xs text-red-600">{r.error}</p>
+                        ) : (
+                          <>
+                            <p className="text-sm text-slate-500 mb-3">{r.tableCount} Tabelle(n) gefunden</p>
+                            <button
+                              onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'tabellen', 'xlsx'))}
+                              className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2"
+                            >
+                              <Download className="w-4 h-4" />
+                              Als Excel herunterladen
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {extractionResult && activeTab === 'compare' && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-5">
+                    <div className="flex gap-3 mb-4 text-xs">
+                      <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-md font-medium">+{extractionResult.addedCount} hinzugefügt</span>
+                      <span className="px-2.5 py-1 bg-red-50 text-red-700 rounded-md font-medium">−{extractionResult.removedCount} entfernt</span>
+                    </div>
+                    <p className="text-sm text-slate-600 mb-4 leading-relaxed">{extractionResult.summary}</p>
+                    <div className="max-h-64 overflow-y-auto bg-slate-50 rounded-lg p-3 text-xs leading-relaxed mb-4">
+                      {extractionResult.segments.map((seg, i) => (
+                        <span
+                          key={i}
+                          className={
+                            seg.type === 'added' ? 'bg-emerald-100 text-emerald-800' :
+                            seg.type === 'removed' ? 'bg-red-100 text-red-800 line-through' :
+                            'text-slate-500'
+                          }
+                        >
+                          {seg.value}
+                        </span>
+                      ))}
+                    </div>
+                    {extractionResult.outputPath && (
+                      <button
+                        onClick={() => downloadFile(extractionResult.outputPath, 'vergleichsbericht.pdf')}
+                        className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        PDF-Bericht herunterladen
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {files.length > 0 && activeTab !== 'compare' && (
               <div className="space-y-2 mb-4">
                 {files.length > 1 && (
                   <p className="text-xs text-slate-400 mb-1">Reihenfolge per Pfeil anpassen — so werden sie zusammengeführt</p>
@@ -595,7 +1071,7 @@ export default function App() {
                       key={level}
                       onClick={() => setCompressionLevel(level)}
                       className={`py-2.5 rounded-lg text-xs font-medium capitalize transition-colors border ${
-                        compressionLevel === level ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                        compressionLevel === level ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                       }`}
                     >
                       {level}
@@ -612,7 +1088,7 @@ export default function App() {
                   <button
                     onClick={() => setSplitMode('every')}
                     className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                      splitMode === 'every' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      splitMode === 'every' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     Alle X Seiten
@@ -620,7 +1096,7 @@ export default function App() {
                   <button
                     onClick={() => setSplitMode('ranges')}
                     className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                      splitMode === 'ranges' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      splitMode === 'ranges' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     Bestimmte Seiten
@@ -662,7 +1138,7 @@ export default function App() {
                   <button
                     onClick={() => { setConvertDirection('toPDF'); setFiles([]); }}
                     className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                      convertDirection === 'toPDF' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      convertDirection === 'toPDF' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     Bilder → PDF
@@ -670,7 +1146,7 @@ export default function App() {
                   <button
                     onClick={() => { setConvertDirection('toImages'); setFiles([]); }}
                     className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                      convertDirection === 'toImages' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      convertDirection === 'toImages' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     PDF → Bilder
@@ -688,7 +1164,7 @@ export default function App() {
                       key={deg}
                       onClick={() => setRotateDegrees(deg)}
                       className={`py-2.5 rounded-lg text-xs font-medium transition-colors border flex items-center justify-center gap-1.5 ${
-                        rotateDegrees === deg ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                        rotateDegrees === deg ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                       }`}
                     >
                       <RotateCw className="w-3.5 h-3.5" />
@@ -720,7 +1196,7 @@ export default function App() {
                   <button
                     onClick={() => setPasswordMode('set')}
                     className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                      passwordMode === 'set' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      passwordMode === 'set' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     Passwort setzen
@@ -728,7 +1204,7 @@ export default function App() {
                   <button
                     onClick={() => setPasswordMode('remove')}
                     className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                      passwordMode === 'remove' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      passwordMode === 'remove' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     Passwort entfernen
@@ -795,7 +1271,7 @@ export default function App() {
                       key={opt.value}
                       onClick={() => setOcrLanguage(opt.value)}
                       className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
-                        ocrLanguage === opt.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                        ocrLanguage === opt.value ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
                       }`}
                     >
                       {opt.label}
@@ -807,7 +1283,7 @@ export default function App() {
             )}
 
             {pendingSteps && (
-              <div className="mb-4 bg-slate-900 text-white rounded-xl p-4">
+              <div className="mb-4 bg-blue-900 text-white rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs uppercase tracking-wide text-slate-400">Geplanter Workflow</p>
                   <button
@@ -975,11 +1451,101 @@ export default function App() {
               </div>
             )}
 
-            {files.length > 0 && (
+            {files.length > 1 && SINGLE_FILE_TABS.includes(activeTab) && !pendingSteps && (
+              <>
+                <button
+                  onClick={processBatch}
+                  disabled={batchProcessing || (activeTab === 'password' && !password.trim())}
+                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
+                >
+                  {batchProcessing ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Datei {batchProgress.current} von {batchProgress.total}...</>
+                  ) : (
+                    <><Check className="w-4 h-4" />Alle {files.length} Dateien verarbeiten</>
+                  )}
+                </button>
+
+                {batchResults && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-medium text-slate-500">
+                        {Object.values(selectedBatchFiles).filter(Boolean).length} von {batchResults.filter(r => r.success).length} ausgewählt
+                      </p>
+                      <button
+                        onClick={downloadSelectedBatchFiles}
+                        disabled={Object.values(selectedBatchFiles).filter(Boolean).length === 0}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Ausgewählte herunterladen
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {batchResults.map((r, i) => (
+                        <label
+                          key={i}
+                          className={`flex items-center gap-3 bg-white border rounded-lg p-3.5 transition-colors ${
+                            r.success ? 'cursor-pointer border-slate-200 hover:border-slate-300' : 'border-red-100'
+                          }`}
+                        >
+                          {r.success ? (
+                            <input
+                              type="checkbox"
+                              checked={!!selectedBatchFiles[i]}
+                              onChange={() => toggleBatchFileSelection(i)}
+                              className="w-4 h-4 accent-blue-900 flex-shrink-0"
+                            />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-700 truncate">{r.filename}</p>
+                            {!r.success && <p className="text-xs text-red-600">{r.error}</p>}
+                            {r.success && (
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {activeTab === 'compress' && r.data.savings !== undefined && (
+                                  r.data.savings > 0 ? (
+                                    <>
+                                      <span className="text-xs text-slate-400">{formatFileSize(r.data.originalSize)} → {formatFileSize(r.data.compressedSize)}</span>
+                                      <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">−{r.data.savings}%</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-amber-600">keine Einsparung möglich</span>
+                                  )
+                                )}
+                                {activeTab === 'rotate' && (
+                                  <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{r.data.degrees}° gedreht</span>
+                                )}
+                                {activeTab === 'watermark' && (
+                                  <span className="text-xs font-medium text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded">"{r.data.text}"</span>
+                                )}
+                                {activeTab === 'password' && (
+                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${r.data.protected ? 'text-emerald-600 bg-emerald-50' : 'text-slate-600 bg-slate-100'}`}>
+                                    {r.data.protected ? 'Passwort gesetzt' : 'Passwort entfernt'}
+                                  </span>
+                                )}
+                                {activeTab === 'metadata' && (
+                                  <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Metadaten aktualisiert</span>
+                                )}
+                                {activeTab === 'ocr' && (
+                                  <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Texterkennung angewendet</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {files.length > 0 && !['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab) && !(files.length > 1 && SINGLE_FILE_TABS.includes(activeTab) && !pendingSteps) && (
               <button
                 onClick={pendingSteps ? processWorkflow : processFiles}
                 disabled={processing || (activeTab === 'merge' && !pendingSteps && files.length < 2) || (activeTab === 'password' && !pendingSteps && !password.trim())}
-                className="w-full py-3 rounded-lg font-medium text-sm text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-2"
+                className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-2"
               >
                 {processing ? (
                   <><Loader2 className="w-4 h-4 animate-spin" />Wird verarbeitet...</>
@@ -1079,7 +1645,7 @@ export default function App() {
                         <button
                           key={i}
                           onClick={() => downloadFile(filePath)}
-                          className="w-full py-2.5 px-3 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-between gap-2"
+                          className="w-full py-2.5 px-3 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-between gap-2"
                         >
                           <span className="truncate">{filename}</span>
                           <Download className="w-4 h-4 flex-shrink-0" />
@@ -1088,7 +1654,7 @@ export default function App() {
                     })}
                   </div>
                 ) : (
-                  <button onClick={() => downloadFile()} className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
+                  <button onClick={() => downloadFile(null, buildDownloadName(files[0]?.name, TAB_SUFFIX[activeTab]))} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2">
                     <Download className="w-4 h-4" />
                     Herunterladen
                   </button>
@@ -1098,19 +1664,37 @@ export default function App() {
           </div>
         </div>
 
+        {chatCollapsed ? (
+          <div className="w-14 border-l border-slate-200 bg-white flex flex-col items-center pt-4">
+            <button
+              onClick={() => setChatCollapsed(false)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+            >
+              <PanelRightOpen className="w-4.5 h-4.5" />
+            </button>
+          </div>
+        ) : (
         <div className="w-96 border-l border-slate-200 bg-white flex flex-col">
-          <div className="p-4 border-b border-slate-200 flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center">
-              <Sparkles className="w-3.5 h-3.5 text-slate-500" />
+          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-md bg-slate-100 flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              <h2 className="font-medium text-sm text-slate-700">Assistent</h2>
             </div>
-            <h2 className="font-medium text-sm text-slate-700">Assistent</h2>
+            <button
+              onClick={() => setChatCollapsed(true)}
+              className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors"
+            >
+              <PanelRightClose className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed ${
-                  msg.role === 'user' ? 'bg-slate-900 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-sm'
+                  msg.role === 'user' ? 'bg-blue-900 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-sm'
                 }`}>
                   {msg.text}
                 </div>
@@ -1138,12 +1722,13 @@ export default function App() {
                 placeholder="Was möchtest du tun?"
                 className="flex-1 bg-transparent text-sm outline-none placeholder-slate-400 text-slate-700"
               />
-              <button onClick={sendMessage} className="w-7 h-7 rounded-md bg-slate-900 flex items-center justify-center flex-shrink-0 hover:bg-slate-800 transition-colors">
+              <button onClick={sendMessage} className="w-7 h-7 rounded-md bg-blue-900 flex items-center justify-center flex-shrink-0 hover:bg-blue-950 transition-colors">
                 <Send className="w-3.5 h-3.5 text-white" />
               </button>
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
