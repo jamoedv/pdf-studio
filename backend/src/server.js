@@ -65,6 +65,15 @@ app.use('/api/v1', extractRoutes);
 app.use('/api/v1', intelligenceRoutes);
 app.use('/api/v1', toolsRoutes);
 
+app.get('/api/v1/debug-key', (req, res) => {
+  const key = process.env.TOOL_API_KEY || '';
+  res.json({
+    length: key.length,
+    firstChars: key.slice(0, 4),
+    lastChars: key.slice(-4)
+  });
+});
+
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
