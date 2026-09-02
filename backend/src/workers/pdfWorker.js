@@ -23,7 +23,8 @@ async function logHistory(job, result) {
       timestamp: new Date().toISOString(),
       summary: buildSummary(job.name, job.data, result),
       outputPath: result.outputPath || (result.files ? result.files[0] : null),
-      fileCount: result.files ? result.files.length : 1
+      fileCount: result.files ? result.files.length : 1,
+      username: job.data.username || 'unbekannt'
     };
     await redisClient.lpush('history', JSON.stringify(entry));
     await redisClient.ltrim('history', 0, 49);
@@ -277,8 +278,29 @@ pdfQueue.process('redact', async (job) => {
   return { ...result, outputPath };
 });
 
+async function updateStats(job, result) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    await redisClient.incr('stats:totalJobs');
+    await redisClient.hincrby('stats:byType', job.name, 1);
+    await redisClient.hincrby('stats:daily', today, 1);
+
+    if (job.data.username) {
+      await redisClient.hincrby('stats:byUser', job.data.username, 1);
+    }
+
+    if (job.name === 'compress' && result.originalSize && result.compressedSize) {
+      const savedBytes = Math.max(0, result.originalSize - result.compressedSize);
+      await redisClient.incrby('stats:totalStorageSavedBytes', savedBytes);
+    }
+  } catch (e) {
+    console.error('Stats update failed:', e.message);
+  }
+}
+
 pdfQueue.on('completed', (job, result) => {
   logHistory(job, result);
+  updateStats(job, result);
 });
 
 console.log('🔧 PDF Worker started, waiting for jobs...');

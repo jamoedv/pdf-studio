@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/requireAuth');
+router.use(requireAuth);
 const { v4: uuidv4 } = require('uuid');
 const redisClient = require('../services/redisClient');
 

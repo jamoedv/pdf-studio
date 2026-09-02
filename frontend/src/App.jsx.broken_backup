@@ -186,62 +186,6 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  const [files, setFiles] = useState([]);
-  const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [compressionLevel, setCompressionLevel] = useState('medium');
-  const [splitMode, setSplitMode] = useState('every');
-  const [pagesPerSplit, setPagesPerSplit] = useState(1);
-  const [splitRanges, setSplitRanges] = useState('');
-  const [rotateDegrees, setRotateDegrees] = useState(90);
-  const [watermarkText, setWatermarkText] = useState('ENTWURF');
-  const [convertDirection, setConvertDirection] = useState('toPDF');
-  const [passwordMode, setPasswordMode] = useState('set');
-  const [password, setPassword] = useState('');
-  const [metaTitle, setMetaTitle] = useState('');
-  const [metaAuthor, setMetaAuthor] = useState('');
-  const [metaSubject, setMetaSubject] = useState('');
-  const [ocrLanguage, setOcrLanguage] = useState('deu+eng');
-  const [redactUseAI, setRedactUseAI] = useState(true);
-  const [redactCustomTerms, setRedactCustomTerms] = useState('');
-
-  const [showHistory, setShowHistory] = useState(false);
-  const [historyEntries, setHistoryEntries] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [saveTemplateName, setSaveTemplateName] = useState('');
-  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
-
-  const [messages, setMessages] = useState([
-    { role: 'assistant', text: 'Hi! Sag mir einfach, was ich mit deinen PDFs machen soll — auch mehrere Schritte in einem Satz, z.B. "füge zusammen und komprimiere dann stark". Lad dann noch deine Datei(en) hoch.' }
-  ]);
-  const [input, setInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [pendingSteps, setPendingSteps] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const pollRef = useRef(null);
-  const chatEndRef = useRef(null);
-
-  const [compareFileB, setCompareFileB] = useState(null);
-  const [referenceFile, setReferenceFile] = useState(null);
-  const [complianceResults, setComplianceResults] = useState(null);
-  const [complianceLoading, setComplianceLoading] = useState(false);
-  const [complianceError, setComplianceError] = useState(null);
-  const [expandedReport, setExpandedReport] = useState(null);
-  const [complianceReportPath, setComplianceReportPath] = useState(null);
-
-  const [extractionResult, setExtractionResult] = useState(null);
-  const [extractionLoading, setExtractionLoading] = useState(false);
-  const [extractionError, setExtractionError] = useState(null);
-  const [generateReport, setGenerateReport] = useState(false);
-
-  const [batchResults, setBatchResults] = useState(null);
-  const [batchProcessing, setBatchProcessing] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
-  const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
-
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -254,96 +198,21 @@ export default function App() {
   const [statsData, setStatsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
-  const SINGLE_FILE_TABS = ['compress', 'rotate', 'watermark', 'password', 'metadata', 'ocr', 'redact'];
-
-  const TAB_SUFFIX = {
-    compress: 'komprimiert',
-    rotate: 'gedreht',
-    watermark: 'wasserzeichen',
-    password: 'geschuetzt',
-    metadata: 'metadaten',
-    ocr: 'ocr',
-    redact: 'redigiert',
-    'extract-keyvalues': 'kennwerte_bericht',
-    'extract-standards': 'normen_bericht',
-    'extract-tables': 'tabellen'
-  };
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
-
-  const loadHistory = async () => {
-    setHistoryLoading(true);
+  const loadStats = async () => {
+    setStatsLoading(true);
     try {
-      const res = await authFetch(`${API_URL}/history`);
+      const res = await authFetch(`${API_URL}/stats`);
       const data = await res.json();
-      setHistoryEntries(data);
+      setStatsData(data);
     } catch (err) {
-      setHistoryEntries([]);
+      setStatsData(null);
     }
-    setHistoryLoading(false);
+    setStatsLoading(false);
   };
 
-  const toggleHistory = () => {
-    setShowHistory(prev => !prev);
-    if (!showHistory) loadHistory();
-  };
-
-  const loadTemplates = async () => {
-    try {
-      const res = await authFetch(`${API_URL}/templates`);
-      const data = await res.json();
-      setTemplates(data);
-    } catch (err) {
-      setTemplates([]);
-    }
-  };
-
-  const toggleTemplates = () => {
-    setShowTemplates(prev => !prev);
-    if (!showTemplates) loadTemplates();
-  };
-
-  const saveCurrentAsTemplate = async () => {
-    if (!pendingSteps || !saveTemplateName.trim()) return;
-    try {
-      await authFetch(`${API_URL}/templates`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: saveTemplateName, steps: pendingSteps })
-      });
-      setSaveTemplateName('');
-      setShowSaveTemplate(false);
-      setMessages(prev => [...prev, { role: 'assistant', text: `Vorlage "${saveTemplateName}" gespeichert. Du findest sie unter "Vorlagen".` }]);
-    } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', text: 'Vorlage konnte nicht gespeichert werden.' }]);
-    }
-  };
-
-  const deleteTemplate = async (id) => {
-    try {
-      await authFetch(`${API_URL}/templates/${id}`, { method: 'DELETE' });
-      setTemplates(prev => prev.filter(t => t.id !== id));
-    } catch (err) {}
-  };
-
-  const useTemplate = (template) => {
-    setPendingSteps(template.steps);
-    setShowTemplates(false);
-    setMessages(prev => [...prev, { role: 'assistant', text: `Vorlage "${template.name}" geladen: ${template.steps.map(s => s.action).join(' → ')}. Lad jetzt deine Datei(en) hoch.` }]);
-  };
-
-  const updateStepOption = (index, key, value) => {
-    setPendingSteps(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], options: { ...updated[index].options, [key]: value } };
-      return updated;
-    });
+  const toggleStats = () => {
+    setShowStats(prev => !prev);
+    if (!showStats) loadStats();
   };
 
   const loadAdminUsers = async () => {
@@ -426,55 +295,142 @@ export default function App() {
       setAdminError(err.message);
     }
   };
+  const [files, setFiles] = useState([]);
+  const [processing, setProcessing] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [compressionLevel, setCompressionLevel] = useState('medium');
+  const [splitMode, setSplitMode] = useState('every');
+  const [pagesPerSplit, setPagesPerSplit] = useState(1);
+  const [splitRanges, setSplitRanges] = useState('');
+  const [rotateDegrees, setRotateDegrees] = useState(90);
+  const [watermarkText, setWatermarkText] = useState('ENTWURF');
+  const [convertDirection, setConvertDirection] = useState('toPDF');
+  const [passwordMode, setPasswordMode] = useState('set');
+  const [password, setPassword] = useState('');
+  const [metaTitle, setMetaTitle] = useState('');
+  const [metaAuthor, setMetaAuthor] = useState('');
+  const [metaSubject, setMetaSubject] = useState('');
+  const [ocrLanguage, setOcrLanguage] = useState('deu+eng');
+  const [compareFileB, setCompareFileB] = useState(null);
+  const [referenceFile, setReferenceFile] = useState(null);
+  const [complianceResults, setComplianceResults] = useState(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceError, setComplianceError] = useState(null);
+  const [expandedReport, setExpandedReport] = useState(null);
+  const [complianceReportPath, setComplianceReportPath] = useState(null);
+  const [extractionResult, setExtractionResult] = useState(null);
+  const [extractionLoading, setExtractionLoading] = useState(false);
+  const [extractionError, setExtractionError] = useState(null);
+  const [generateReport, setGenerateReport] = useState(false);
+  const [batchResults, setBatchResults] = useState(null);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
+  const [redactUseAI, setRedactUseAI] = useState(true);
+  const [redactCustomTerms, setRedactCustomTerms] = useState('');
 
-  const loadStats = async () => {
-    setStatsLoading(true);
+  const SINGLE_FILE_TABS = ['compress', 'rotate', 'watermark', 'password', 'metadata', 'ocr', 'redact'];
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState('');
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [messages, setMessages] = useState([
+    { role: 'assistant', text: 'Hi! Sag mir einfach, was ich mit deinen PDFs machen soll — auch mehrere Schritte in einem Satz, z.B. "füge zusammen und komprimiere dann stark". Lad dann noch deine Datei(en) hoch.' }
+  ]);
+  const [input, setInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [pendingSteps, setPendingSteps] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const pollRef = useRef(null);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
     try {
-      const res = await authFetch(`${API_URL}/stats`);
+      const res = await fetch(`${API_URL}/history`);
       const data = await res.json();
-      setStatsData(data);
+      setHistoryEntries(data);
     } catch (err) {
-      setStatsData(null);
+      setHistoryEntries([]);
     }
-    setStatsLoading(false);
+    setHistoryLoading(false);
   };
 
-  const toggleStats = () => {
-    setShowStats(prev => !prev);
-    if (!showStats) loadStats();
+  const toggleHistory = () => {
+    setShowHistory(prev => !prev);
+    if (!showHistory) loadHistory();
+  };
+
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch(`${API_URL}/templates`);
+      const data = await res.json();
+      setTemplates(data);
+    } catch (err) {
+      setTemplates([]);
+    }
+  };
+
+  const toggleTemplates = () => {
+    setShowTemplates(prev => !prev);
+    if (!showTemplates) loadTemplates();
+  };
+
+  const saveCurrentAsTemplate = async () => {
+    if (!pendingSteps || !saveTemplateName.trim()) return;
+    try {
+      await fetch(`${API_URL}/templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: saveTemplateName, steps: pendingSteps })
+      });
+      setSaveTemplateName('');
+      setShowSaveTemplate(false);
+      setMessages(prev => [...prev, { role: 'assistant', text: `Vorlage "${saveTemplateName}" gespeichert. Du findest sie unter "Vorlagen".` }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Vorlage konnte nicht gespeichert werden.' }]);
+    }
+  };
+
+  const deleteTemplate = async (id) => {
+    try {
+      await fetch(`${API_URL}/templates/${id}`, { method: 'DELETE' });
+      setTemplates(prev => prev.filter(t => t.id !== id));
+    } catch (err) {
+      // stumm fehlschlagen
+    }
+  };
+
+  const useTemplate = (template) => {
+    setPendingSteps(template.steps);
+    setShowTemplates(false);
+    setMessages(prev => [...prev, { role: 'assistant', text: `Vorlage "${template.name}" geladen: ${template.steps.map(s => s.action).join(' → ')}. Lad jetzt deine Datei(en) hoch.` }]);
+  };
+
+  const updateStepOption = (index, key, value) => {
+    setPendingSteps(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], options: { ...updated[index].options, [key]: value } };
+      return updated;
+    });
   };
 
   const formatFileSize = (bytes) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
-
-  const buildDownloadName = (originalName, suffix, ext) => {
-    const base = (originalName || 'datei').replace(/\.pdf$/i, '');
-    return `${base}${suffix ? '_' + suffix : ''}.${ext || 'pdf'}`;
-  };
-
-  const downloadFile = async (path, suggestedName) => {
-    const targetPath = path || result?.outputPath;
-    if (!targetPath) return;
-    const serverFilename = targetPath.split('/').pop();
-    const url = `${API_URL}/download/${serverFilename}`;
-    try {
-      const response = await authFetch(url);
-      if (!response.ok) throw new Error('Download fehlgeschlagen');
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = suggestedName || serverFilename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (err) {
-      setError('Download fehlgeschlagen. Bitte erneut versuchen.');
-    }
   };
 
   const handleFileUpload = (e) => {
@@ -511,8 +467,18 @@ export default function App() {
     setError(null);
   };
 
-  const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
-  const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -530,7 +496,7 @@ export default function App() {
     setChatLoading(true);
 
     try {
-      const res = await authFetch(`${API_URL}/chat`, {
+      const res = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMsg })
@@ -566,7 +532,7 @@ export default function App() {
   const pollJobStatus = (jobId) => {
     pollRef.current = setInterval(async () => {
       try {
-        const res = await authFetch(`${API_URL}/job/${jobId}`);
+        const res = await fetch(`${API_URL}/job/${jobId}`);
         const data = await res.json();
 
         if (data.status === 'completed') {
@@ -591,131 +557,10 @@ export default function App() {
     }, 1500);
   };
 
-  const processWorkflow = async () => {
-    if (files.length === 0 || !pendingSteps) return;
-    setProcessing(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const formData = new FormData();
-      files.forEach(f => formData.append('files', f));
-      formData.append('steps', JSON.stringify(pendingSteps));
-
-      const needsPassword = pendingSteps.some(s => s.action === 'password');
-      if (needsPassword) {
-        if (!password.trim()) {
-          setError('Für den Passwort-Schritt wird ein Passwort benötigt (im Workflow-Schritt eingeben).');
-          setProcessing(false);
-          return;
-        }
-        formData.append('password', password);
-      }
-
-      const response = await authFetch(`${API_URL}/workflow`, { method: 'POST', body: formData });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Workflow fehlgeschlagen');
-      }
-
-      const data = await response.json();
-      pollJobStatus(data.jobId);
-    } catch (err) {
-      setError(err.message || 'Ein Fehler ist aufgetreten');
-      setProcessing(false);
-    }
-  };
-
-  const cancelWorkflow = () => {
-    setPendingSteps(null);
-    setFiles([]);
-    setResult(null);
-    setError(null);
-  };
-
-  const processFiles = async () => {
-    if (files.length === 0) return;
-    setProcessing(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const formData = new FormData();
-      let endpoint = '';
-
-      if (activeTab === 'compress') {
-        formData.append('file', files[0]);
-        formData.append('compressionLevel', compressionLevel);
-        endpoint = '/compress';
-      } else if (activeTab === 'merge') {
-        files.forEach(f => formData.append('files', f));
-        endpoint = '/merge';
-      } else if (activeTab === 'split') {
-        formData.append('file', files[0]);
-        formData.append('mode', splitMode);
-        formData.append('pagesPerSplit', pagesPerSplit);
-        formData.append('ranges', splitRanges);
-        endpoint = '/split';
-      } else if (activeTab === 'convert') {
-        if (convertDirection === 'toPDF') {
-          files.forEach(f => formData.append('files', f));
-          formData.append('conversionType', 'imagesToPDF');
-          endpoint = '/convert';
-        } else {
-          formData.append('file', files[0]);
-          formData.append('format', 'jpeg');
-          endpoint = '/pdf-to-images';
-        }
-      } else if (activeTab === 'rotate') {
-        formData.append('file', files[0]);
-        formData.append('degrees', rotateDegrees);
-        endpoint = '/rotate';
-      } else if (activeTab === 'watermark') {
-        formData.append('file', files[0]);
-        formData.append('text', watermarkText);
-        endpoint = '/watermark';
-      } else if (activeTab === 'password') {
-        formData.append('file', files[0]);
-        formData.append('password', password);
-        endpoint = passwordMode === 'set' ? '/set-password' : '/remove-password';
-      } else if (activeTab === 'metadata') {
-        formData.append('file', files[0]);
-        formData.append('title', metaTitle);
-        formData.append('author', metaAuthor);
-        formData.append('subject', metaSubject);
-        endpoint = '/metadata';
-      } else if (activeTab === 'ocr') {
-        formData.append('file', files[0]);
-        formData.append('language', ocrLanguage);
-        endpoint = '/ocr';
-      } else if (activeTab === 'redact') {
-        formData.append('file', files[0]);
-        formData.append('useAI', redactUseAI ? 'true' : 'false');
-        const terms = redactCustomTerms.split(',').map(t => t.trim()).filter(Boolean);
-        formData.append('customTerms', JSON.stringify(terms));
-        endpoint = '/redact';
-      }
-
-      const response = await authFetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Upload fehlgeschlagen');
-      }
-
-      const data = await response.json();
-      pollJobStatus(data.jobId);
-    } catch (err) {
-      setError(err.message || 'Ein Fehler ist aufgetreten');
-      setProcessing(false);
-    }
-  };
-
   const submitAndAwaitJob = (endpoint, formData) => {
     return new Promise(async (resolve, reject) => {
       try {
-        const response = await authFetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
+        const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
         if (!response.ok) {
           const errData = await response.json();
           throw new Error(errData.error || 'Verarbeitung fehlgeschlagen');
@@ -724,7 +569,7 @@ export default function App() {
 
         const interval = setInterval(async () => {
           try {
-            const res = await authFetch(`${API_URL}/job/${jobData.jobId}`);
+            const res = await fetch(`${API_URL}/job/${jobData.jobId}`);
             const data = await res.json();
             if (data.status === 'completed') {
               clearInterval(interval);
@@ -835,6 +680,49 @@ export default function App() {
     });
   };
 
+  const processWorkflow = async () => {
+    if (files.length === 0 || !pendingSteps) return;
+    setProcessing(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      files.forEach(f => formData.append('files', f));
+      formData.append('steps', JSON.stringify(pendingSteps));
+
+      const needsPassword = pendingSteps.some(s => s.action === 'password');
+      if (needsPassword) {
+        if (!password.trim()) {
+          setError('Für den Passwort-Schritt wird ein Passwort benötigt (im Workflow-Schritt eingeben).');
+          setProcessing(false);
+          return;
+        }
+        formData.append('password', password);
+      }
+
+      const response = await fetch(`${API_URL}/workflow`, { method: 'POST', body: formData });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Workflow fehlgeschlagen');
+      }
+
+      const data = await response.json();
+      pollJobStatus(data.jobId);
+    } catch (err) {
+      setError(err.message || 'Ein Fehler ist aufgetreten');
+      setProcessing(false);
+    }
+  };
+
+  const cancelWorkflow = () => {
+    setPendingSteps(null);
+    setFiles([]);
+    setResult(null);
+    setError(null);
+  };
+
   const processExtraction = async () => {
     if (activeTab === 'compare') {
       if (files.length === 0 || !compareFileB) return;
@@ -871,7 +759,7 @@ export default function App() {
         endpoint = '/summarize';
       }
 
-      const response = await authFetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
+      const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
       const data = await response.json();
 
       if (!response.ok) {
@@ -915,6 +803,124 @@ export default function App() {
     setComplianceLoading(false);
   };
 
+  const processFiles = async () => {
+    if (files.length === 0) return;
+    setProcessing(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      let endpoint = '';
+
+      if (activeTab === 'compress') {
+        formData.append('file', files[0]);
+        formData.append('compressionLevel', compressionLevel);
+        endpoint = '/compress';
+      } else if (activeTab === 'merge') {
+        files.forEach(f => formData.append('files', f));
+        endpoint = '/merge';
+      } else if (activeTab === 'split') {
+        formData.append('file', files[0]);
+        formData.append('mode', splitMode);
+        formData.append('pagesPerSplit', pagesPerSplit);
+        formData.append('ranges', splitRanges);
+        endpoint = '/split';
+      } else if (activeTab === 'convert') {
+        if (convertDirection === 'toPDF') {
+          files.forEach(f => formData.append('files', f));
+          formData.append('conversionType', 'imagesToPDF');
+          endpoint = '/convert';
+        } else {
+          formData.append('file', files[0]);
+          formData.append('format', 'jpeg');
+          endpoint = '/pdf-to-images';
+        }
+      } else if (activeTab === 'rotate') {
+        formData.append('file', files[0]);
+        formData.append('degrees', rotateDegrees);
+        endpoint = '/rotate';
+      } else if (activeTab === 'watermark') {
+        formData.append('file', files[0]);
+        formData.append('text', watermarkText);
+        endpoint = '/watermark';
+      } else if (activeTab === 'password') {
+        formData.append('file', files[0]);
+        formData.append('password', password);
+        endpoint = passwordMode === 'set' ? '/set-password' : '/remove-password';
+      } else if (activeTab === 'metadata') {
+        formData.append('file', files[0]);
+        formData.append('title', metaTitle);
+        formData.append('author', metaAuthor);
+        formData.append('subject', metaSubject);
+        endpoint = '/metadata';
+      } else if (activeTab === 'ocr') {
+        formData.append('file', files[0]);
+        formData.append('language', ocrLanguage);
+        endpoint = '/ocr';
+      } else if (activeTab === 'redact') {
+        formData.append('file', files[0]);
+        formData.append('useAI', redactUseAI ? 'true' : 'false');
+        const terms = redactCustomTerms.split(',').map(t => t.trim()).filter(Boolean);
+        formData.append('customTerms', JSON.stringify(terms));
+        endpoint = '/redact';
+      }
+
+      const response = await fetch(`${API_URL}${endpoint}`, { method: 'POST', body: formData });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Upload fehlgeschlagen');
+      }
+
+      const data = await response.json();
+      pollJobStatus(data.jobId);
+    } catch (err) {
+      setError(err.message || 'Ein Fehler ist aufgetreten');
+      setProcessing(false);
+    }
+  };
+
+  const TAB_SUFFIX = {
+    compress: 'komprimiert',
+    rotate: 'gedreht',
+    watermark: 'wasserzeichen',
+    password: 'geschuetzt',
+    metadata: 'metadaten',
+    ocr: 'ocr',
+    redact: 'redigiert',
+    'extract-keyvalues': 'kennwerte_bericht',
+    'extract-standards': 'normen_bericht',
+    'extract-tables': 'tabellen'
+  };
+
+  const buildDownloadName = (originalName, suffix, ext) => {
+    const base = (originalName || 'datei').replace(/\.pdf$/i, '');
+    return `${base}${suffix ? '_' + suffix : ''}.${ext || 'pdf'}`;
+  };
+
+  const downloadFile = async (path, suggestedName) => {
+    const targetPath = path || result?.outputPath;
+    if (!targetPath) return;
+    const serverFilename = targetPath.split('/').pop();
+    const url = `${API_URL}/download/${serverFilename}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Download fehlgeschlagen');
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = suggestedName || serverFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      setError('Download fehlgeschlagen. Bitte erneut versuchen.');
+    }
+  };
+
   const switchTab = (tabId) => {
     setActiveTab(tabId);
     setActiveCategory(findCategoryForTab(tabId));
@@ -946,17 +952,14 @@ export default function App() {
       <div className="flex h-screen">
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-2xl mx-auto p-8">
-
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center shadow-sm">
-                  <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" fill="none">
-                    <path d="M6 2h8l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="white" fillOpacity="0.95" />
-                    <path d="M14 2v5h5" fill="none" stroke="#1e3a8a" strokeWidth="1.2" strokeLinejoin="round" />
-                    <path d="M8.5 13l2.3 2.3L15.5 10.5" stroke="#1e3a8a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
+                  <FileText className="w-4.5 h-4.5 text-white" />
                 </div>
-                <h1 className="text-base font-semibold text-slate-900 leading-tight">PDF Studio</h1>
+                <div>
+                  <h1 className="text-base font-semibold text-slate-900 leading-tight">PDF Studio</h1>
+                </div>
               </div>
 
               <div className="relative">
@@ -1028,7 +1031,7 @@ export default function App() {
                           <p className="text-xs text-slate-400">{t.steps.map(s => s.action).join(' → ')}</p>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => useTemplate(t)} className="px-2.5 py-1 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950">
+                          <button onClick={() => useTemplate(t)} className="px-2.5 py-1 bg-slate-900 text-white rounded-md text-xs font-medium hover:bg-slate-800">
                             Nutzen
                           </button>
                           <button onClick={() => deleteTemplate(t.id)} className="p-1.5 hover:bg-slate-200 rounded-md">
@@ -1096,11 +1099,11 @@ export default function App() {
                       </div>
                     </div>
 
-                    {statsData?.daily?.length > 0 && (
+                    {statsData.daily.length > 0 && (
                       <div className="mb-5">
                         <p className="text-xs font-medium text-slate-500 mb-2">Letzte 14 Tage</p>
                         <div className="flex items-end gap-1 h-20">
-                          {statsData?.daily?.map((d, i) => {
+                          {statsData.daily.map((d, i) => {
                             const max = Math.max(...statsData.daily.map(x => x.count), 1);
                             const heightPct = (d.count / max) * 100;
                             return (
@@ -1117,11 +1120,11 @@ export default function App() {
                       </div>
                     )}
 
-                    {statsData?.byType?.length > 0 && (
+                    {statsData.byType.length > 0 && (
                       <div className="mb-5">
                         <p className="text-xs font-medium text-slate-500 mb-2">Nach Funktion</p>
                         <div className="space-y-1.5">
-                          {statsData?.byType?.slice(0, 6).map((t, i) => {
+                          {statsData.byType.slice(0, 6).map((t, i) => {
                             const max = statsData.byType[0].count;
                             return (
                               <div key={i} className="flex items-center gap-2">
@@ -1137,7 +1140,7 @@ export default function App() {
                       </div>
                     )}
 
-                    {currentUser?.role === 'admin' && statsData?.byUser?.length > 0 && (
+                    {currentUser?.role === 'admin' && statsData.byUser.length > 0 && (
                       <div>
                         <p className="text-xs font-medium text-slate-500 mb-2">Nach Nutzer</p>
                         <div className="space-y-1.5">
@@ -1154,7 +1157,6 @@ export default function App() {
                 )}
               </div>
             )}
-
             {showAdmin && (
               <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -1246,7 +1248,7 @@ export default function App() {
                   key={cat.id}
                   onClick={() => switchCategory(cat.id)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    activeCategory === cat.id ? 'bg-blue-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+                    activeCategory === cat.id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
                   }`}
                 >
                   {cat.label}
@@ -1263,7 +1265,7 @@ export default function App() {
                     key={tab.id}
                     onClick={() => switchTab(tab.id)}
                     className={`flex items-center gap-1.5 pb-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-                      isActive ? 'text-slate-900 border-blue-900' : 'text-slate-400 border-transparent hover:text-slate-600'
+                      isActive ? 'text-slate-900 border-slate-900' : 'text-slate-400 border-transparent hover:text-slate-600'
                     }`}
                   >
                     <Icon />
@@ -1286,6 +1288,101 @@ export default function App() {
                 <p className="text-xs text-slate-400 mt-2">Unten die zu prüfenden Prüfberichte hochladen (mehrere möglich)</p>
               </div>
             )}
+
+              {activeTab === 'compliance' && (
+                <>
+                  <label className="flex items-center gap-2.5 mb-4 bg-white border border-slate-200 rounded-xl p-4 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={generateReport}
+                      onChange={(e) => setGenerateReport(e.target.checked)}
+                      className="w-4 h-4 accent-blue-900"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">PDF-Sammelbericht erstellen</p>
+                      <p className="text-xs text-slate-400">Ein Dokument mit allen Prüfergebnissen zum Herunterladen</p>
+                    </div>
+                  </label>
+
+                  <button
+                    onClick={processCompliance}
+                    disabled={complianceLoading || !referenceFile || files.length === 0}
+                    className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
+                  >
+                    {complianceLoading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Wird geprüft...</>
+                    ) : (
+                      <><ClipboardCheck className="w-4 h-4" />Prüfung starten</>
+                    )}
+                  </button>
+
+                  {complianceError && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 mb-4">
+                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                      <p className="text-sm text-red-700">{complianceError}</p>
+                    </div>
+                  )}
+
+                  {complianceResults && (
+                    <div className="space-y-2 mb-4">
+                      {complianceReportPath && (
+                        <button
+                          onClick={() => downloadFile(complianceReportPath, 'compliance_bericht.pdf')}
+                          className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2 mb-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          Sammelbericht herunterladen
+                        </button>
+                      )}
+                      {complianceResults.map((r, i) => {
+                        const isExpanded = expandedReport === i;
+                        const badgeStyle = r.overallResult === 'bestanden'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : r.overallResult === 'nicht_bestanden'
+                          ? 'bg-red-50 text-red-700'
+                          : 'bg-amber-50 text-amber-700';
+                        const badgeLabel = r.overallResult === 'bestanden' ? 'Bestanden' : r.overallResult === 'nicht_bestanden' ? 'Nicht bestanden' : 'Unklar';
+                        return (
+                          <div key={i} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                            <button
+                              onClick={() => setExpandedReport(isExpanded ? null : i)}
+                              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                            >
+                              <span className="text-sm font-medium text-slate-700 truncate">{r.filename}</span>
+                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ml-3 ${badgeStyle}`}>{badgeLabel}</span>
+                            </button>
+                            {isExpanded && (
+                              <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                                {r.summary && <p className="text-xs text-slate-600 mb-3 leading-relaxed">{r.summary}</p>}
+                                {r.note && <p className="text-xs text-amber-600 mb-3">{r.note}</p>}
+                                {r.criteria && r.criteria.length > 0 && (
+                                  <div className="space-y-1.5">
+                                    {r.criteria.map((c, ci) => (
+                                      <div key={ci} className="flex items-center justify-between gap-2 py-1.5 border-b border-slate-50 last:border-0">
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-xs font-medium text-slate-700 truncate">{c.name}</p>
+                                          <p className="text-xs text-slate-400">Soll: {c.required} · Ist: {c.actual}</p>
+                                        </div>
+                                        <span className={`text-xs px-2 py-0.5 rounded-md flex-shrink-0 ${
+                                          c.result === 'bestanden' ? 'bg-emerald-50 text-emerald-700' :
+                                          c.result === 'nicht_bestanden' ? 'bg-red-50 text-red-700' :
+                                          'bg-slate-100 text-slate-500'
+                                        }`}>
+                                          {c.result === 'bestanden' ? '✓' : c.result === 'nicht_bestanden' ? '✗' : '?'}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
 
             {activeTab === 'compare' ? (
               <div className="grid grid-cols-2 gap-3 mb-4">
@@ -1321,7 +1418,7 @@ export default function App() {
                 <div className={`border-2 border-dashed rounded-lg p-9 text-center transition-all duration-200 ${
                   isDragging ? 'border-slate-500 bg-slate-100' : 'border-slate-200 group-hover:border-slate-400 group-hover:bg-slate-50'
                 }`}>
-                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-blue-900 flex items-center justify-center">
+                  <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-slate-900 flex items-center justify-center">
                     <Upload className="w-5 h-5 text-white" />
                   </div>
                   <p className="font-medium text-slate-700 text-sm mb-1">
@@ -1344,189 +1441,14 @@ export default function App() {
             </div>
             )}
 
-            {files.length > 0 && activeTab !== 'compare' && (
-              <div className="space-y-2 mb-4">
-                {files.length > 1 && (
-                  <p className="text-xs text-slate-400 mb-1">Reihenfolge per Pfeil anpassen — so werden sie zusammengeführt</p>
-                )}
-                {files.map((file, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-700 truncate">{file.name}</p>
-                        <p className="text-xs text-slate-400">{formatFileSize(file.size)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {files.length > 1 && (
-                        <>
-                          <button onClick={() => moveFile(i, -1)} disabled={i === 0} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                            <ArrowUp className="w-3.5 h-3.5 text-slate-400" />
-                          </button>
-                          <button onClick={() => moveFile(i, 1)} disabled={i === files.length - 1} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                            <ArrowDown className="w-3.5 h-3.5 text-slate-400" />
-                          </button>
-                        </>
-                      )}
-                      <button onClick={() => removeFile(i)} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors">
-                        <X className="w-4 h-4 text-slate-400" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'compress' && files.length > 0 && (
-              <div className="mb-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Kompressionsstufe</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {['low', 'medium', 'high', 'maximum'].map(level => (
-                    <button
-                      key={level}
-                      onClick={() => setCompressionLevel(level)}
-                      className={`py-2.5 rounded-lg text-xs font-medium capitalize transition-colors border ${
-                        compressionLevel === level ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
-                      }`}
-                    >
-                      {level}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'split' && files.length > 0 && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Was möchtest du erhalten?</label>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button onClick={() => setSplitMode('every')} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${splitMode === 'every' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                    Alle X Seiten
-                  </button>
-                  <button onClick={() => setSplitMode('ranges')} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${splitMode === 'ranges' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                    Bestimmte Seiten
-                  </button>
-                </div>
-                {splitMode === 'every' ? (
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1.5 block">Seiten pro Datei</label>
-                    <input type="number" min="1" value={pagesPerSplit} onChange={(e) => setPagesPerSplit(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                    <p className="text-xs text-slate-400 mt-1.5">z.B. "1" = jede Seite einzeln, "2" = je 2 Seiten zusammen</p>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="text-xs text-slate-500 mb-1.5 block">Seitenbereiche</label>
-                    <input type="text" value={splitRanges} onChange={(e) => setSplitRanges(e.target.value)} placeholder="z.B. 1-3,5,8-10" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                    <p className="text-xs text-slate-400 mt-1.5">Kommagetrennt, Bereiche mit Bindestrich</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'convert' && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Richtung</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => { setConvertDirection('toPDF'); setFiles([]); }} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${convertDirection === 'toPDF' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                    Bilder → PDF
-                  </button>
-                  <button onClick={() => { setConvertDirection('toImages'); setFiles([]); }} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${convertDirection === 'toImages' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                    PDF → Bilder
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'rotate' && files.length > 0 && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Drehwinkel</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[90, 180, 270].map(deg => (
-                    <button key={deg} onClick={() => setRotateDegrees(deg)} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border flex items-center justify-center gap-1.5 ${rotateDegrees === deg ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                      <RotateCw className="w-3.5 h-3.5" />
-                      {deg}°
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'watermark' && files.length > 0 && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Wasserzeichen-Text</label>
-                <input type="text" value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} placeholder="z.B. ENTWURF, VERTRAULICH" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                <p className="text-xs text-slate-400 mt-1.5">Wird diagonal über alle Seiten gelegt</p>
-              </div>
-            )}
-
-            {activeTab === 'password' && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Aktion</label>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button onClick={() => setPasswordMode('set')} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${passwordMode === 'set' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                    Passwort setzen
-                  </button>
-                  <button onClick={() => setPasswordMode('remove')} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${passwordMode === 'remove' ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                    Passwort entfernen
-                  </button>
-                </div>
-                <label className="text-xs text-slate-500 mb-1.5 block">{passwordMode === 'set' ? 'Neues Passwort' : 'Aktuelles Passwort'}</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Passwort eingeben" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-              </div>
-            )}
-
-            {activeTab === 'metadata' && files.length > 0 && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                <div>
-                  <label className="text-xs text-slate-500 mb-1.5 block">Titel</label>
-                  <input type="text" value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} placeholder="z.B. Jahresbericht 2026" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1.5 block">Autor</label>
-                  <input type="text" value={metaAuthor} onChange={(e) => setMetaAuthor(e.target.value)} placeholder="z.B. Max Mustermann" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 mb-1.5 block">Betreff</label>
-                  <input type="text" value={metaSubject} onChange={(e) => setMetaSubject(e.target.value)} placeholder="z.B. Quartalszahlen" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'ocr' && files.length > 0 && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Sprache im Dokument</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[{ value: 'deu+eng', label: 'DE + EN' }, { value: 'deu', label: 'Deutsch' }, { value: 'eng', label: 'English' }].map(opt => (
-                    <button key={opt.value} onClick={() => setOcrLanguage(opt.value)} className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${ocrLanguage === opt.value ? 'bg-blue-900 text-white border-blue-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'}`}>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-slate-400 mt-2">Macht gescannte PDFs durchsuchbar und kopierbar. Kann bei vielen Seiten etwas dauern.</p>
-              </div>
-            )}
-
-            {activeTab === 'redact' && files.length > 0 && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <label className="flex items-center gap-2.5 cursor-pointer mb-3">
-                  <input type="checkbox" checked={redactUseAI} onChange={(e) => setRedactUseAI(e.target.checked)} className="w-4 h-4 accent-blue-900" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">KI-Erkennung nutzen</p>
-                    <p className="text-xs text-slate-400">Findet automatisch Namen und Adressen im Dokument</p>
-                  </div>
-                </label>
-                <label className="text-xs text-slate-500 mb-1.5 block">Eigene Suchbegriffe (kommagetrennt)</label>
-                <input type="text" value={redactCustomTerms} onChange={(e) => setRedactCustomTerms(e.target.value)} placeholder="z.B. Projektname X, Firma Y" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
-                <p className="text-xs text-slate-400 mt-2">IBANs, E-Mails und Telefonnummern werden immer automatisch erkannt. Das Ergebnis-PDF ist bildbasiert — Text ist danach wirklich entfernt, nicht nur überdeckt.</p>
-              </div>
-            )}
-
             {['extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab) && (
               <label className="flex items-center gap-2.5 mb-4 bg-white border border-slate-200 rounded-xl p-4 cursor-pointer">
-                <input type="checkbox" checked={generateReport} onChange={(e) => setGenerateReport(e.target.checked)} className="w-4 h-4 accent-blue-900" />
+                <input
+                  type="checkbox"
+                  checked={generateReport}
+                  onChange={(e) => setGenerateReport(e.target.checked)}
+                  className="w-4 h-4 accent-slate-900"
+                />
                 <div>
                   <p className="text-sm font-medium text-slate-700">Zusätzlich PDF-Bericht erstellen</p>
                   <p className="text-xs text-slate-400">Formatiertes PDF, das anschließend weiterverarbeitet werden kann (z.B. mit Passwort schützen)</p>
@@ -1534,86 +1456,18 @@ export default function App() {
               </label>
             )}
 
-            {activeTab === 'compliance' && (
-              <>
-                <label className="flex items-center gap-2.5 mb-4 bg-white border border-slate-200 rounded-xl p-4 cursor-pointer">
-                  <input type="checkbox" checked={generateReport} onChange={(e) => setGenerateReport(e.target.checked)} className="w-4 h-4 accent-blue-900" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">PDF-Sammelbericht erstellen</p>
-                    <p className="text-xs text-slate-400">Ein Dokument mit allen Prüfergebnissen zum Herunterladen</p>
-                  </div>
-                </label>
-
-                <button
-                  onClick={processCompliance}
-                  disabled={complianceLoading || !referenceFile || files.length === 0}
-                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
-                >
-                  {complianceLoading ? (<><Loader2 className="w-4 h-4 animate-spin" />Wird geprüft...</>) : (<><ClipboardCheck className="w-4 h-4" />Prüfung starten</>)}
-                </button>
-
-                {complianceError && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 mb-4">
-                    <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                    <p className="text-sm text-red-700">{complianceError}</p>
-                  </div>
-                )}
-
-                {complianceResults && (
-                  <div className="space-y-2 mb-4">
-                    {complianceReportPath && (
-                      <button onClick={() => downloadFile(complianceReportPath, 'compliance_bericht.pdf')} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2 mb-2">
-                        <Download className="w-4 h-4" />
-                        Sammelbericht herunterladen
-                      </button>
-                    )}
-                    {complianceResults.map((r, i) => {
-                      const isExpanded = expandedReport === i;
-                      const badgeStyle = r.overallResult === 'bestanden' ? 'bg-emerald-50 text-emerald-700' : r.overallResult === 'nicht_bestanden' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700';
-                      const badgeLabel = r.overallResult === 'bestanden' ? 'Bestanden' : r.overallResult === 'nicht_bestanden' ? 'Nicht bestanden' : 'Unklar';
-                      return (
-                        <div key={i} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                          <button onClick={() => setExpandedReport(isExpanded ? null : i)} className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
-                            <span className="text-sm font-medium text-slate-700 truncate">{r.filename}</span>
-                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ml-3 ${badgeStyle}`}>{badgeLabel}</span>
-                          </button>
-                          {isExpanded && (
-                            <div className="px-4 pb-4 border-t border-slate-100 pt-3">
-                              {r.summary && <p className="text-xs text-slate-600 mb-3 leading-relaxed">{r.summary}</p>}
-                              {r.note && <p className="text-xs text-amber-600 mb-3">{r.note}</p>}
-                              {r.criteria && r.criteria.length > 0 && (
-                                <div className="space-y-1.5">
-                                  {r.criteria.map((c, ci) => (
-                                    <div key={ci} className="flex items-center justify-between gap-2 py-1.5 border-b border-slate-50 last:border-0">
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-medium text-slate-700 truncate">{c.name}</p>
-                                        <p className="text-xs text-slate-400">Soll: {c.required} · Ist: {c.actual}</p>
-                                      </div>
-                                      <span className={`text-xs px-2 py-0.5 rounded-md flex-shrink-0 ${c.result === 'bestanden' ? 'bg-emerald-50 text-emerald-700' : c.result === 'nicht_bestanden' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-500'}`}>
-                                        {c.result === 'bestanden' ? '✓' : c.result === 'nicht_bestanden' ? '✗' : '?'}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-
-            {(['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare', 'summarize'].includes(activeTab)) && (
+            {(['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab)) && (
               <>
                 <button
                   onClick={processExtraction}
                   disabled={extractionLoading || (activeTab === 'compare' ? (files.length === 0 || !compareFileB) : files.length === 0)}
-                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
+                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
                 >
-                  {extractionLoading ? (<><Loader2 className="w-4 h-4 animate-spin" />Wird analysiert...</>) : (<><Check className="w-4 h-4" />Analysieren</>)}
+                  {extractionLoading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Wird analysiert...</>
+                  ) : (
+                    <><Check className="w-4 h-4" />Analysieren</>
+                  )}
                 </button>
 
                 {extractionError && (
@@ -1663,7 +1517,10 @@ export default function App() {
                               </div>
                             )}
                             {r.outputPath && (
-                              <button onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'kennwerte_bericht'))} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'kennwerte_bericht'))}
+                                className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                              >
                                 <Download className="w-4 h-4" />
                                 PDF-Bericht herunterladen
                               </button>
@@ -1697,7 +1554,10 @@ export default function App() {
                               </div>
                             )}
                             {r.outputPath && (
-                              <button onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'normen_bericht'))} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'normen_bericht'))}
+                                className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                              >
                                 <Download className="w-4 h-4" />
                                 PDF-Bericht herunterladen
                               </button>
@@ -1719,7 +1579,10 @@ export default function App() {
                         ) : (
                           <>
                             <p className="text-sm text-slate-500 mb-3">{r.tableCount} Tabelle(n) gefunden</p>
-                            <button onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'tabellen', 'xlsx'))} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => downloadFile(r.outputPath, buildDownloadName(r.filename, 'tabellen', 'xlsx'))}
+                              className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                            >
                               <Download className="w-4 h-4" />
                               Als Excel herunterladen
                             </button>
@@ -1739,13 +1602,23 @@ export default function App() {
                     <p className="text-sm text-slate-600 mb-4 leading-relaxed">{extractionResult.summary}</p>
                     <div className="max-h-64 overflow-y-auto bg-slate-50 rounded-lg p-3 text-xs leading-relaxed mb-4">
                       {extractionResult.segments.map((seg, i) => (
-                        <span key={i} className={seg.type === 'added' ? 'bg-emerald-100 text-emerald-800' : seg.type === 'removed' ? 'bg-red-100 text-red-800 line-through' : 'text-slate-500'}>
+                        <span
+                          key={i}
+                          className={
+                            seg.type === 'added' ? 'bg-emerald-100 text-emerald-800' :
+                            seg.type === 'removed' ? 'bg-red-100 text-red-800 line-through' :
+                            'text-slate-500'
+                          }
+                        >
                           {seg.value}
                         </span>
                       ))}
                     </div>
                     {extractionResult.outputPath && (
-                      <button onClick={() => downloadFile(extractionResult.outputPath, 'vergleichsbericht.pdf')} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => downloadFile(extractionResult.outputPath, 'vergleichsbericht.pdf')}
+                        className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                      >
                         <Download className="w-4 h-4" />
                         PDF-Bericht herunterladen
                       </button>
@@ -1755,11 +1628,304 @@ export default function App() {
               </>
             )}
 
+            {files.length > 0 && activeTab !== 'compare' && (
+              <div className="space-y-2 mb-4">
+                {files.length > 1 && (
+                  <p className="text-xs text-slate-400 mb-1">Reihenfolge per Pfeil anpassen — so werden sie zusammengeführt</p>
+                )}
+                {files.map((file, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{file.name}</p>
+                        <p className="text-xs text-slate-400">{formatFileSize(file.size)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {files.length > 1 && (
+                        <>
+                          <button
+                            onClick={() => moveFile(i, -1)}
+                            disabled={i === 0}
+                            className="p-1.5 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5 text-slate-400" />
+                          </button>
+                          <button
+                            onClick={() => moveFile(i, 1)}
+                            disabled={i === files.length - 1}
+                            className="p-1.5 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5 text-slate-400" />
+                          </button>
+                        </>
+                      )}
+                      <button onClick={() => removeFile(i)} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors">
+                        <X className="w-4 h-4 text-slate-400" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'compress' && files.length > 0 && (
+              <div className="mb-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Kompressionsstufe</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {['low', 'medium', 'high', 'maximum'].map(level => (
+                    <button
+                      key={level}
+                      onClick={() => setCompressionLevel(level)}
+                      className={`py-2.5 rounded-lg text-xs font-medium capitalize transition-colors border ${
+                        compressionLevel === level ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'split' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Was möchtest du erhalten?</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    onClick={() => setSplitMode('every')}
+                    className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                      splitMode === 'every' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    Alle X Seiten
+                  </button>
+                  <button
+                    onClick={() => setSplitMode('ranges')}
+                    className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                      splitMode === 'ranges' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    Bestimmte Seiten
+                  </button>
+                </div>
+
+                {splitMode === 'every' ? (
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1.5 block">Seiten pro Datei</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={pagesPerSplit}
+                      onChange={(e) => setPagesPerSplit(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                    />
+                    <p className="text-xs text-slate-400 mt-1.5">z.B. "1" = jede Seite einzeln, "2" = je 2 Seiten zusammen</p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1.5 block">Seitenbereiche</label>
+                    <input
+                      type="text"
+                      value={splitRanges}
+                      onChange={(e) => setSplitRanges(e.target.value)}
+                      placeholder="z.B. 1-3,5,8-10"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                    />
+                    <p className="text-xs text-slate-400 mt-1.5">Kommagetrennt, Bereiche mit Bindestrich</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'convert' && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Richtung</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setConvertDirection('toPDF'); setFiles([]); }}
+                    className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                      convertDirection === 'toPDF' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    Bilder → PDF
+                  </button>
+                  <button
+                    onClick={() => { setConvertDirection('toImages'); setFiles([]); }}
+                    className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                      convertDirection === 'toImages' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    PDF → Bilder
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'rotate' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Drehwinkel</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[90, 180, 270].map(deg => (
+                    <button
+                      key={deg}
+                      onClick={() => setRotateDegrees(deg)}
+                      className={`py-2.5 rounded-lg text-xs font-medium transition-colors border flex items-center justify-center gap-1.5 ${
+                        rotateDegrees === deg ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                      {deg}°
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'watermark' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Wasserzeichen-Text</label>
+                <input
+                  type="text"
+                  value={watermarkText}
+                  onChange={(e) => setWatermarkText(e.target.value)}
+                  placeholder="z.B. ENTWURF, VERTRAULICH"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                />
+                <p className="text-xs text-slate-400 mt-1.5">Wird diagonal über alle Seiten gelegt</p>
+              </div>
+            )}
+
+            {activeTab === 'password' && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Aktion</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    onClick={() => setPasswordMode('set')}
+                    className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                      passwordMode === 'set' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    Passwort setzen
+                  </button>
+                  <button
+                    onClick={() => setPasswordMode('remove')}
+                    className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                      passwordMode === 'remove' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    Passwort entfernen
+                  </button>
+                </div>
+                <label className="text-xs text-slate-500 mb-1.5 block">
+                  {passwordMode === 'set' ? 'Neues Passwort' : 'Aktuelles Passwort'}
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Passwort eingeben"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                />
+              </div>
+            )}
+
+            {activeTab === 'metadata' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Titel</label>
+                  <input
+                    type="text"
+                    value={metaTitle}
+                    onChange={(e) => setMetaTitle(e.target.value)}
+                    placeholder="z.B. Jahresbericht 2026"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Autor</label>
+                  <input
+                    type="text"
+                    value={metaAuthor}
+                    onChange={(e) => setMetaAuthor(e.target.value)}
+                    placeholder="z.B. Max Mustermann"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Betreff</label>
+                  <input
+                    type="text"
+                    value={metaSubject}
+                    onChange={(e) => setMetaSubject(e.target.value)}
+                    placeholder="z.B. Quartalszahlen"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'ocr' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Sprache im Dokument</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'deu+eng', label: 'DE + EN' },
+                    { value: 'deu', label: 'Deutsch' },
+                    { value: 'eng', label: 'English' }
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setOcrLanguage(opt.value)}
+                      className={`py-2.5 rounded-lg text-xs font-medium transition-colors border ${
+                        ocrLanguage === opt.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-slate-400 mt-2">Macht gescannte PDFs durchsuchbar und kopierbar. Kann bei vielen Seiten etwas dauern.</p>
+              </div>
+            )}
+
+            {activeTab === 'redact' && files.length > 0 && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="flex items-center gap-2.5 cursor-pointer mb-3">
+                  <input
+                    type="checkbox"
+                    checked={redactUseAI}
+                    onChange={(e) => setRedactUseAI(e.target.checked)}
+                    className="w-4 h-4 accent-blue-900"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">KI-Erkennung nutzen</p>
+                    <p className="text-xs text-slate-400">Findet automatisch Namen und Adressen im Dokument</p>
+                  </div>
+                </label>
+                <label className="text-xs text-slate-500 mb-1.5 block">Eigene Suchbegriffe (kommagetrennt)</label>
+                <input
+                  type="text"
+                  value={redactCustomTerms}
+                  onChange={(e) => setRedactCustomTerms(e.target.value)}
+                  placeholder="z.B. Projektname X, Firma Y"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="text-xs text-slate-400 mt-2">IBANs, E-Mails und Telefonnummern werden immer automatisch erkannt. Das Ergebnis-PDF ist bildbasiert — Text ist danach wirklich entfernt, nicht nur überdeckt.</p>
+              </div>
+            )}
+
             {pendingSteps && (
-              <div className="mb-4 bg-blue-900 text-white rounded-xl p-4">
+              <div className="mb-4 bg-slate-900 text-white rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs uppercase tracking-wide text-slate-400">Geplanter Workflow</p>
-                  <button onClick={() => setShowSaveTemplate(prev => !prev)} className="text-xs text-slate-400 hover:text-white flex items-center gap-1">
+                  <button
+                    onClick={() => setShowSaveTemplate(prev => !prev)}
+                    className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+                  >
                     <Bookmark className="w-3 h-3" />
                     Als Vorlage speichern
                   </button>
@@ -1770,59 +1936,126 @@ export default function App() {
                       <span className="px-2.5 py-1 bg-white/10 rounded-md text-xs font-medium capitalize flex-shrink-0">{i + 1}. {s.action}</span>
 
                       {s.action === 'compress' && (
-                        <select value={s.options?.level || 'medium'} onChange={(e) => updateStepOption(i, 'level', e.target.value)} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none">
+                        <select
+                          value={s.options?.level || 'medium'}
+                          onChange={(e) => updateStepOption(i, 'level', e.target.value)}
+                          className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none"
+                        >
                           <option className="text-slate-900" value="low">Low</option>
                           <option className="text-slate-900" value="medium">Medium</option>
                           <option className="text-slate-900" value="high">High</option>
                           <option className="text-slate-900" value="maximum">Maximum</option>
                         </select>
                       )}
+
                       {s.action === 'rotate' && (
-                        <select value={s.options?.degrees || 90} onChange={(e) => updateStepOption(i, 'degrees', parseInt(e.target.value))} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none">
+                        <select
+                          value={s.options?.degrees || 90}
+                          onChange={(e) => updateStepOption(i, 'degrees', parseInt(e.target.value))}
+                          className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none"
+                        >
                           <option className="text-slate-900" value={90}>90°</option>
                           <option className="text-slate-900" value={180}>180°</option>
                           <option className="text-slate-900" value={270}>270°</option>
                         </select>
                       )}
+
                       {s.action === 'watermark' && (
-                        <input type="text" value={s.options?.text || ''} onChange={(e) => updateStepOption(i, 'text', e.target.value)} placeholder="Wasserzeichen-Text" className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-36" />
+                        <input
+                          type="text"
+                          value={s.options?.text || ''}
+                          onChange={(e) => updateStepOption(i, 'text', e.target.value)}
+                          placeholder="Wasserzeichen-Text"
+                          className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-36"
+                        />
                       )}
+
                       {s.action === 'password' && (
                         <>
-                          <select value={s.options?.mode || 'set'} onChange={(e) => updateStepOption(i, 'mode', e.target.value)} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none">
+                          <select
+                            value={s.options?.mode || 'set'}
+                            onChange={(e) => updateStepOption(i, 'mode', e.target.value)}
+                            className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none"
+                          >
                             <option className="text-slate-900" value="set">Setzen</option>
                             <option className="text-slate-900" value="remove">Entfernen</option>
                           </select>
-                          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Passwort" className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-28" />
+                          <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Passwort"
+                            className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-28"
+                          />
                         </>
                       )}
+
                       {s.action === 'convert' && (
-                        <select value={s.options?.direction || 'toPDF'} onChange={(e) => updateStepOption(i, 'direction', e.target.value)} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none">
+                        <select
+                          value={s.options?.direction || 'toPDF'}
+                          onChange={(e) => updateStepOption(i, 'direction', e.target.value)}
+                          className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none"
+                        >
                           <option className="text-slate-900" value="toPDF">Bilder → PDF</option>
                           <option className="text-slate-900" value="toImages">PDF → Bilder</option>
                         </select>
                       )}
+
                       {s.action === 'split' && (
                         <>
-                          <select value={s.options?.mode || 'every'} onChange={(e) => updateStepOption(i, 'mode', e.target.value)} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none">
+                          <select
+                            value={s.options?.mode || 'every'}
+                            onChange={(e) => updateStepOption(i, 'mode', e.target.value)}
+                            className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none"
+                          >
                             <option className="text-slate-900" value="every">Alle X Seiten</option>
                             <option className="text-slate-900" value="ranges">Bestimmte Seiten</option>
                           </select>
                           {(s.options?.mode || 'every') === 'every' ? (
-                            <input type="number" min="1" value={s.options?.pagesPerSplit || 1} onChange={(e) => updateStepOption(i, 'pagesPerSplit', parseInt(e.target.value))} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none w-16" />
+                            <input
+                              type="number"
+                              min="1"
+                              value={s.options?.pagesPerSplit || 1}
+                              onChange={(e) => updateStepOption(i, 'pagesPerSplit', parseInt(e.target.value))}
+                              className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none w-16"
+                            />
                           ) : (
-                            <input type="text" value={s.options?.ranges || ''} onChange={(e) => updateStepOption(i, 'ranges', e.target.value)} placeholder="1-3,5" className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-24" />
+                            <input
+                              type="text"
+                              value={s.options?.ranges || ''}
+                              onChange={(e) => updateStepOption(i, 'ranges', e.target.value)}
+                              placeholder="1-3,5"
+                              className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-24"
+                            />
                           )}
                         </>
                       )}
+
                       {s.action === 'metadata' && (
                         <>
-                          <input type="text" value={s.options?.title || ''} onChange={(e) => updateStepOption(i, 'title', e.target.value)} placeholder="Titel" className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-28" />
-                          <input type="text" value={s.options?.author || ''} onChange={(e) => updateStepOption(i, 'author', e.target.value)} placeholder="Autor" className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-28" />
+                          <input
+                            type="text"
+                            value={s.options?.title || ''}
+                            onChange={(e) => updateStepOption(i, 'title', e.target.value)}
+                            placeholder="Titel"
+                            className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-28"
+                          />
+                          <input
+                            type="text"
+                            value={s.options?.author || ''}
+                            onChange={(e) => updateStepOption(i, 'author', e.target.value)}
+                            placeholder="Autor"
+                            className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none placeholder-slate-500 w-28"
+                          />
                         </>
                       )}
+
                       {s.action === 'ocr' && (
-                        <select value={s.options?.language || 'deu+eng'} onChange={(e) => updateStepOption(i, 'language', e.target.value)} className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none">
+                        <select
+                          value={s.options?.language || 'deu+eng'}
+                          onChange={(e) => updateStepOption(i, 'language', e.target.value)}
+                          className="bg-white/10 text-white text-xs rounded-md px-2 py-1 outline-none border-none"
+                        >
                           <option className="text-slate-900" value="deu+eng">DE + EN</option>
                           <option className="text-slate-900" value="deu">Deutsch</option>
                           <option className="text-slate-900" value="eng">English</option>
@@ -1835,8 +2068,18 @@ export default function App() {
                 </div>
                 {showSaveTemplate && (
                   <div className="flex items-center gap-2 mt-3">
-                    <input type="text" value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} placeholder="Name der Vorlage" className="flex-1 px-2.5 py-1.5 bg-white/10 rounded-md text-xs outline-none placeholder-slate-500 focus:ring-1 focus:ring-white/30" />
-                    <button onClick={saveCurrentAsTemplate} disabled={!saveTemplateName.trim()} className="px-3 py-1.5 bg-white text-slate-900 rounded-md text-xs font-medium disabled:opacity-40">
+                    <input
+                      type="text"
+                      value={saveTemplateName}
+                      onChange={(e) => setSaveTemplateName(e.target.value)}
+                      placeholder="Name der Vorlage"
+                      className="flex-1 px-2.5 py-1.5 bg-white/10 rounded-md text-xs outline-none placeholder-slate-500 focus:ring-1 focus:ring-white/30"
+                    />
+                    <button
+                      onClick={saveCurrentAsTemplate}
+                      disabled={!saveTemplateName.trim()}
+                      className="px-3 py-1.5 bg-white text-slate-900 rounded-md text-xs font-medium disabled:opacity-40"
+                    >
                       Speichern
                     </button>
                   </div>
@@ -1849,9 +2092,13 @@ export default function App() {
                 <button
                   onClick={processBatch}
                   disabled={batchProcessing || (activeTab === 'password' && !password.trim())}
-                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
+                  className="w-full py-3 rounded-lg font-medium text-sm text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-4"
                 >
-                  {batchProcessing ? (<><Loader2 className="w-4 h-4 animate-spin" />Datei {batchProgress.current} von {batchProgress.total}...</>) : (<><Check className="w-4 h-4" />Alle {files.length} Dateien verarbeiten</>)}
+                  {batchProcessing ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Datei {batchProgress.current} von {batchProgress.total}...</>
+                  ) : (
+                    <><Check className="w-4 h-4" />Alle {files.length} Dateien verarbeiten</>
+                  )}
                 </button>
 
                 {batchResults && (
@@ -1863,7 +2110,7 @@ export default function App() {
                       <button
                         onClick={downloadSelectedBatchFiles}
                         disabled={Object.values(selectedBatchFiles).filter(Boolean).length === 0}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-md text-xs font-medium hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
                       >
                         <Download className="w-3.5 h-3.5" />
                         Ausgewählte herunterladen
@@ -1871,9 +2118,19 @@ export default function App() {
                     </div>
                     <div className="space-y-2">
                       {batchResults.map((r, i) => (
-                        <label key={i} className={`flex items-center gap-3 bg-white border rounded-lg p-3.5 transition-colors ${r.success ? 'cursor-pointer border-slate-200 hover:border-slate-300' : 'border-red-100'}`}>
+                        <label
+                          key={i}
+                          className={`flex items-center gap-3 bg-white border rounded-lg p-3.5 transition-colors ${
+                            r.success ? 'cursor-pointer border-slate-200 hover:border-slate-300' : 'border-red-100'
+                          }`}
+                        >
                           {r.success ? (
-                            <input type="checkbox" checked={!!selectedBatchFiles[i]} onChange={() => toggleBatchFileSelection(i)} className="w-4 h-4 accent-blue-900 flex-shrink-0" />
+                            <input
+                              type="checkbox"
+                              checked={!!selectedBatchFiles[i]}
+                              onChange={() => toggleBatchFileSelection(i)}
+                              className="w-4 h-4 accent-slate-900 flex-shrink-0"
+                            />
                           ) : (
                             <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                           )}
@@ -1923,18 +2180,27 @@ export default function App() {
               </>
             )}
 
-            {files.length > 0 && !['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare', 'summarize', 'compliance'].includes(activeTab) && !(files.length > 1 && SINGLE_FILE_TABS.includes(activeTab) && !pendingSteps) && (
+            {files.length > 0 && !['extract-tables', 'extract-keyvalues', 'extract-standards', 'compare'].includes(activeTab) && !(files.length > 1 && SINGLE_FILE_TABS.includes(activeTab) && !pendingSteps) && (
               <button
                 onClick={pendingSteps ? processWorkflow : processFiles}
                 disabled={processing || (activeTab === 'merge' && !pendingSteps && files.length < 2) || (activeTab === 'password' && !pendingSteps && !password.trim())}
-                className="w-full py-3 rounded-lg font-medium text-sm text-white bg-blue-900 hover:bg-blue-950 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-2"
+                className="w-full py-3 rounded-lg font-medium text-sm text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 mb-2"
               >
-                {processing ? (<><Loader2 className="w-4 h-4 animate-spin" />Wird verarbeitet...</>) : pendingSteps ? (<><Check className="w-4 h-4" />Workflow starten ({pendingSteps.length} Schritte)</>) : (<><Check className="w-4 h-4" />Datei verarbeiten</>)}
+                {processing ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" />Wird verarbeitet...</>
+                ) : pendingSteps ? (
+                  <><Check className="w-4 h-4" />Workflow starten ({pendingSteps.length} Schritte)</>
+                ) : (
+                  <><Check className="w-4 h-4" />Datei verarbeiten</>
+                )}
               </button>
             )}
 
             {pendingSteps && !processing && (
-              <button onClick={cancelWorkflow} className="w-full py-2 rounded-lg font-medium text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors mb-4">
+              <button
+                onClick={cancelWorkflow}
+                className="w-full py-2 rounded-lg font-medium text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors mb-4"
+              >
                 Workflow abbrechen
               </button>
             )}
@@ -1966,7 +2232,9 @@ export default function App() {
                         <span className="font-medium text-slate-700 capitalize">{i + 1}. {step.action}</span>
                         <span className="text-slate-500">
                           {step.action === 'compress' && step.savings !== undefined && (
-                            step.savings > 0 ? `${formatFileSize(step.originalSize)} → ${formatFileSize(step.compressedSize)} (−${step.savings}%)` : 'keine Einsparung möglich'
+                            step.savings > 0
+                              ? `${formatFileSize(step.originalSize)} → ${formatFileSize(step.compressedSize)} (−${step.savings}%)`
+                              : 'keine Einsparung möglich'
                           )}
                           {step.action === 'merge' && `${step.fileCount} Dateien → ${step.pageCount} Seiten`}
                           {step.action === 'rotate' && `${step.degrees}° gedreht`}
@@ -2027,7 +2295,11 @@ export default function App() {
                     {result.files.map((filePath, i) => {
                       const filename = filePath.split('/').pop();
                       return (
-                        <button key={i} onClick={() => downloadFile(filePath)} className="w-full py-2.5 px-3 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-between gap-2">
+                        <button
+                          key={i}
+                          onClick={() => downloadFile(filePath)}
+                          className="w-full py-2.5 px-3 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-between gap-2"
+                        >
                           <span className="truncate">{filename}</span>
                           <Download className="w-4 h-4 flex-shrink-0" />
                         </button>
@@ -2035,7 +2307,7 @@ export default function App() {
                     })}
                   </div>
                 ) : (
-                  <button onClick={() => downloadFile(null, buildDownloadName(files[0]?.name, TAB_SUFFIX[activeTab]))} className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors flex items-center justify-center gap-2">
+                  <button onClick={() => downloadFile(null, buildDownloadName(files[0]?.name, TAB_SUFFIX[activeTab]))} className="w-full py-2.5 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
                     <Download className="w-4 h-4" />
                     Herunterladen
                   </button>
@@ -2047,7 +2319,10 @@ export default function App() {
 
         {chatCollapsed ? (
           <div className="w-14 border-l border-slate-200 bg-white flex flex-col items-center pt-4">
-            <button onClick={() => setChatCollapsed(false)} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+            <button
+              onClick={() => setChatCollapsed(false)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+            >
               <PanelRightOpen className="w-4.5 h-4.5" />
             </button>
           </div>
@@ -2060,7 +2335,10 @@ export default function App() {
               </div>
               <h2 className="font-medium text-sm text-slate-700">Assistent</h2>
             </div>
-            <button onClick={() => setChatCollapsed(true)} className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+            <button
+              onClick={() => setChatCollapsed(true)}
+              className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors"
+            >
               <PanelRightClose className="w-4 h-4" />
             </button>
           </div>
@@ -2068,7 +2346,9 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-900 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-sm'}`}>
+                <div className={`max-w-[85%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed ${
+                  msg.role === 'user' ? 'bg-slate-900 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-sm'
+                }`}>
                   {msg.text}
                 </div>
               </div>
@@ -2095,7 +2375,7 @@ export default function App() {
                 placeholder="Was möchtest du tun?"
                 className="flex-1 bg-transparent text-sm outline-none placeholder-slate-400 text-slate-700"
               />
-              <button onClick={sendMessage} className="w-7 h-7 rounded-md bg-blue-900 flex items-center justify-center flex-shrink-0 hover:bg-blue-950 transition-colors">
+              <button onClick={sendMessage} className="w-7 h-7 rounded-md bg-slate-900 flex items-center justify-center flex-shrink-0 hover:bg-slate-800 transition-colors">
                 <Send className="w-3.5 h-3.5 text-white" />
               </button>
             </div>

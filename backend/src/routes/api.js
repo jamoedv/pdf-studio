@@ -4,6 +4,7 @@ const router = express.Router();
 const upload = require('../middleware/upload');
 const queueService = require('../services/queueService');
 const rateLimit = require('express-rate-limit');
+const { requireAuth } = require('../middleware/requireAuth');
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -11,6 +12,7 @@ const limiter = rateLimit({
 });
 
 router.use(limiter);
+router.use(requireAuth);
 
 router.post('/compress', upload.single('file'), async (req, res, next) => {
   try {
@@ -18,6 +20,7 @@ router.post('/compress', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('compress', {
+      username: req.user.username,
       inputPath: req.file.path,
       compressionLevel
     });
@@ -34,7 +37,8 @@ router.post('/merge', upload.array('files', 10), async (req, res, next) => {
       return res.status(400).json({ error: 'At least 2 files required' });
     }
     const inputPaths = req.files.map(f => f.path);
-    const job = await queueService.addJob('merge', { inputPaths });
+    const job = await queueService.addJob('merge', {
+      username: req.user.username, inputPaths });
     res.json(job);
   } catch (error) {
     next(error);
@@ -48,6 +52,7 @@ router.post('/split', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('split', {
+      username: req.user.username,
       inputPath: req.file.path,
       options: {
         mode,
@@ -69,7 +74,8 @@ router.post('/convert', upload.array('files', 10), async (req, res, next) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
     const inputPaths = req.files.map(f => f.path);
-    const job = await queueService.addJob('convert', { inputPaths, conversionType });
+    const job = await queueService.addJob('convert', {
+      username: req.user.username, inputPaths, conversionType });
     res.json(job);
   } catch (error) {
     next(error);
@@ -82,6 +88,7 @@ router.post('/rotate', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('rotate', {
+      username: req.user.username,
       inputPath: req.file.path,
       degrees: parseInt(degrees)
     });
@@ -98,6 +105,7 @@ router.post('/watermark', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('watermark', {
+      username: req.user.username,
       inputPath: req.file.path,
       text,
       options: {}
@@ -115,6 +123,7 @@ router.post('/set-password', upload.single('file'), async (req, res, next) => {
     if (!password) return res.status(400).json({ error: 'Password required' });
 
     const job = await queueService.addJob('setPassword', {
+      username: req.user.username,
       inputPath: req.file.path,
       password
     });
@@ -132,6 +141,7 @@ router.post('/remove-password', upload.single('file'), async (req, res, next) =>
     if (!password) return res.status(400).json({ error: 'Password required' });
 
     const job = await queueService.addJob('removePassword', {
+      username: req.user.username,
       inputPath: req.file.path,
       password
     });
@@ -148,6 +158,7 @@ router.post('/pdf-to-images', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('pdfToImages', {
+      username: req.user.username,
       inputPath: req.file.path,
       format
     });
@@ -178,6 +189,7 @@ router.post('/workflow', upload.array('files', 10), async (req, res, next) => {
     const fileInputs = req.files.map(f => f.path);
 
     const job = await queueService.addJob('workflow', {
+      username: req.user.username,
       fileInputs,
       steps: parsedSteps,
       password: password || null
@@ -194,6 +206,7 @@ router.post('/metadata', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('metadata', {
+      username: req.user.username,
       inputPath: req.file.path,
       meta: { title, author, subject }
     });
@@ -209,6 +222,7 @@ router.post('/ocr', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const job = await queueService.addJob('ocr', {
+      username: req.user.username,
       inputPath: req.file.path,
       language
     });

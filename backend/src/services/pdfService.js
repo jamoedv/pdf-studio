@@ -869,6 +869,79 @@ Nur woertlich im Text vorkommende Werte. Wenn nichts Passendes gefunden wird, le
       foundTerms: [...new Set(allMatches.map(m => m.matchedText))]
     };
   }
+
+  async checkCompliance(referencePath, reportPaths, generateReport = false, reportOutputPath = null) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const referenceText = (await this.extractPdfText(referencePath)).slice(0, 12000);
+    if (!referenceText.trim()) {
+      throw new Error('Kein Text in der Referenzdatei gefunden (evtl. gescannt — vorher OCR anwenden)');
+    }
+
+    const results = [];
+
+    for (const reportPath of reportPaths) {
+      const reportText = (await this.extractPdfText(reportPath)).slice(0, 12000);
+      const filename = require('path').basename(reportPath);
+
+      if (!reportText.trim()) {
+        results.push({
+          filename,
+          overallResult: 'unklar',
+          criteria: [],
+          note: 'Kein Text im Prüfbericht gefunden (evtl. gescannt)'
+        });
+        continue;
+      }
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 1500,
+        system: `Du prüfst, ob ein Prüfbericht die Anforderungen aus einem Referenzdokument (Norm, Spezifikation) erfüllt.
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
+{
+  "overallResult": "bestanden" | "nicht_bestanden" | "unklar",
+  "criteria": [
+    {"name": "Kriterium", "required": "Anforderung aus Referenz", "actual": "gefundener Wert im Bericht", "result": "bestanden" | "nicht_bestanden" | "nicht_gefunden"}
+  ],
+  "summary": "1-2 Sätze Zusammenfassung"
+}
+
+Vergleiche NUR Kriterien, die im Referenzdokument als Anforderung erkennbar sind (Werte, Toleranzen, Grenzwerte, Pass/Fail-Bedingungen). Berücksichtige Toleranzbereiche korrekt (z.B. "20mm ± 0.005mm" bedeutet 19.995-20.005mm ist bestanden). Wenn ein Kriterium im Bericht nicht vorkommt, markiere es als "nicht_gefunden". "overallResult" ist "nicht_bestanden" wenn MINDESTENS EIN Kriterium fehlschlägt, "unklar" wenn zu viele Kriterien "nicht_gefunden" sind, sonst "bestanden".`,
+        messages: [
+          { role: 'user', content: `REFERENZDOKUMENT (Anforderungen):\n${referenceText}\n\n---\n\nPRÜFBERICHT (zu prüfen):\n${reportText}` }
+        ]
+      });
+
+      const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+      try {
+        const parsed = parseClaudeJSON(responseText);
+        results.push({ filename, ...parsed });
+      } catch (e) {
+        results.push({ filename, overallResult: 'unklar', criteria: [], note: 'Auswertung fehlgeschlagen' });
+      }
+    }
+
+    if (generateReport && reportOutputPath) {
+      const sections = results.map(r => {
+        const label = r.overallResult === 'bestanden' ? 'BESTANDEN' : r.overallResult === 'nicht_bestanden' ? 'NICHT BESTANDEN' : 'UNKLAR';
+        const lines = [`Ergebnis: ${label}`];
+        if (r.summary) lines.push(r.summary);
+        if (r.note) lines.push(r.note);
+        (r.criteria || []).forEach(c => {
+          const mark = c.result === 'bestanden' ? '[OK]' : c.result === 'nicht_bestanden' ? '[FEHLER]' : '[?]';
+          lines.push(`${mark} ${c.name}: Soll ${c.required} / Ist ${c.actual}`);
+        });
+        return { heading: r.filename, lines };
+      });
+
+      await this.generateReportPDF(reportOutputPath, 'Prüfbericht-Compliance-Bericht', sections);
+    }
+
+    return { results, outputPath: generateReport ? reportOutputPath : undefined };
+  }
 }
 
 module.exports = new PDFService();

@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/requireAuth');
+router.use(requireAuth);
 const upload = require('../middleware/upload');
 const pdfService = require('../services/pdfService');
 const path = require('path');

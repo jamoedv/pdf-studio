@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/requireAuth');
+router.use(requireAuth);
 const Anthropic = require('@anthropic-ai/sdk');
 
 const anthropic = new Anthropic({
