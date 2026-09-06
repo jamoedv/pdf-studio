@@ -2,9 +2,9 @@
 aptPkgs = [
   'fonts-liberation',
   'libappindicator3-1',
-  'libasound2',
-  'libatk-bridge2.0-0',
-  'libatk1.0-0',
+  'libatk-bridge2.0-0t64',
+  'libasound2t64',
+  'libatk1.0-0t64',
   'libgbm1',
   'libgtk-3-0',
   'libnspr4',
