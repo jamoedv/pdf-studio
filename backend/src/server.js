@@ -65,6 +65,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/outlook', express.static(path.join(__dirname, '..', 'public', 'outlook')));
 app.use('/api/v1/openapi', express.static(path.join(__dirname, '..', 'public', 'openapi')));
+// Health-Check MUSS ganz vorne stehen, bevor irgendein Router mit pauschalem
+// requireAuth registriert wird - sonst fängt der erstbeste geschützte Router
+// die Anfrage ab (kein passender Pfad dort, aber requireAuth prüft trotzdem
+// jede Anfrage, die ihn erreicht), noch bevor sie hier ankommt.
+app.get('/api/v1/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 app.use('/api/v1', onedriveCallbackRoutes);
 app.use('/api', teamsBotRoutes);
 app.use('/api/v1', authRoutes);
@@ -84,9 +91,6 @@ app.use('/api/v1', historyRoutes);
 app.use('/api/v1', extractRoutes);
 app.use('/api/v1', intelligenceRoutes);
 app.use('/api/v1/tools', toolsRoutes);
-app.get('/api/v1/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
 app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 PDF Processing API running on port ${PORT}`);
