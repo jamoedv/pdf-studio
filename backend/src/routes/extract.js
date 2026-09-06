@@ -4,10 +4,11 @@ const { requireAuth } = require('../middleware/requireAuth');
 router.use(requireAuth);
 const upload = require('../middleware/upload');
 const pdfService = require('../services/pdfService');
+const { withUserContext } = require('../services/anthropicClient');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
-router.post('/extract-tables', upload.array('files', 10), async (req, res, next) => {
+router.post('/extract-tables', upload.array('files', 10), withUserContext, async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
 
@@ -29,10 +30,11 @@ router.post('/extract-tables', upload.array('files', 10), async (req, res, next)
   }
 });
 
-router.post('/extract-keyvalues', upload.array('files', 10), async (req, res, next) => {
+router.post('/extract-keyvalues', upload.array('files', 10), withUserContext, async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
     const generateReport = req.body.generateReport === 'true';
+    const targetFields = req.body.targetFields || '';
 
     const results = [];
     for (const file of req.files) {
@@ -41,7 +43,7 @@ router.post('/extract-keyvalues', upload.array('files', 10), async (req, res, ne
         if (generateReport) {
           reportOutputPath = path.join(process.env.PROCESSED_DIR || 'processed', `keyvalues_report_${uuidv4()}.pdf`);
         }
-        const result = await pdfService.extractKeyValues(file.path, generateReport, reportOutputPath);
+        const result = await pdfService.extractKeyValues(file.path, generateReport, reportOutputPath, targetFields);
         results.push({ filename: file.originalname, ...result });
       } catch (err) {
         results.push({ filename: file.originalname, error: err.message });
@@ -55,7 +57,7 @@ router.post('/extract-keyvalues', upload.array('files', 10), async (req, res, ne
   }
 });
 
-router.post('/compare', upload.fields([{ name: 'fileA', maxCount: 1 }, { name: 'fileB', maxCount: 1 }]), async (req, res, next) => {
+router.post('/compare', upload.fields([{ name: 'fileA', maxCount: 1 }, { name: 'fileB', maxCount: 1 }]), withUserContext, async (req, res, next) => {
   try {
     if (!req.files?.fileA || !req.files?.fileB) {
       return res.status(400).json({ error: 'Beide Dateien (fileA, fileB) erforderlich' });
@@ -73,7 +75,7 @@ router.post('/compare', upload.fields([{ name: 'fileA', maxCount: 1 }, { name: '
   }
 });
 
-router.post('/extract-standards', upload.array('files', 10), async (req, res, next) => {
+router.post('/extract-standards', upload.array('files', 10), withUserContext, async (req, res, next) => {
   try {
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
     const generateReport = req.body.generateReport === 'true';

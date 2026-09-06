@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff, LogOut, User, Users, Shield, BarChart3, ClipboardCheck } from 'lucide-react';
+import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff, LogOut, User, Users, Shield, BarChart3, ClipboardCheck, Plus, GraduationCap, DollarSign, Pencil } from 'lucide-react';
+import TemplateEditor from './TemplateEditor';
+import ExamGrading from './ExamGrading';
+import Assistant from './Assistant';
+import UsageReport from './UsageReport';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -14,6 +18,15 @@ const MergeIconSVG = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
   </svg>
 );
+
+function onDropFiles(e, callback) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    callback(e.dataTransfer.files);
+  }
+}
+const onDragOverPrevent = (e) => e.preventDefault();
 
 const categories = [
   {
@@ -49,6 +62,21 @@ const categories = [
       { id: 'redact', icon: ShieldOff, label: 'Redaktion' },
       { id: 'compliance', icon: ClipboardCheck, label: 'Prüfbericht-Check' },
     ]
+  },
+  {
+    id: 'create',
+    label: 'Erstellen',
+    tabs: [
+      { id: 'document-templates', icon: Plus, label: 'Vorlagen-Editor' },
+      { id: 'exam-grading', icon: GraduationCap, label: 'Klausur-Korrektur' },
+    ]
+  },
+  {
+    id: 'assistant',
+    label: 'Assistent (Beta)',
+    tabs: [
+      { id: 'assistant-chat', icon: Sparkles, label: 'Assistent' },
+    ]
   }
 ];
 
@@ -59,7 +87,7 @@ function findCategoryForTab(tabId) {
   return cat ? cat.id : 'basics';
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onCancel }) {
   const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -104,19 +132,26 @@ function LoginScreen({ onLogin }) {
         </div>
 
         <div className="bg-white border border-slate-200 rounded-2xl p-6">
-          <div className="flex gap-1 mb-5 p-1 bg-slate-100 rounded-lg">
-            <button
-              onClick={() => { setMode('login'); setError(''); }}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
-            >
-              Anmelden
-            </button>
-            <button
-              onClick={() => { setMode('register'); setError(''); }}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'register' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
-            >
-              Registrieren
-            </button>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex gap-1 p-1 bg-slate-100 rounded-lg flex-1">
+              <button
+                onClick={() => { setMode('login'); setError(''); }}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'login' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+              >
+                Anmelden
+              </button>
+              <button
+                onClick={() => { setMode('register'); setError(''); }}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${mode === 'register' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+              >
+                Registrieren
+              </button>
+            </div>
+            {onCancel && (
+              <button onClick={onCancel} className="ml-2 p-2 text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -236,6 +271,7 @@ export default function App() {
   const [extractionLoading, setExtractionLoading] = useState(false);
   const [extractionError, setExtractionError] = useState(null);
   const [generateReport, setGenerateReport] = useState(false);
+  const [targetFields, setTargetFields] = useState('');
 
   const [batchResults, setBatchResults] = useState(null);
   const [batchProcessing, setBatchProcessing] = useState(false);
@@ -243,9 +279,15 @@ export default function App() {
   const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
 
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [newUsername, setNewUsername] = useState('');
+  const [newCostCenter, setNewCostCenter] = useState('');
+  const [adminCostCenters, setAdminCostCenters] = useState({});
+  const [editingUserCostCenter, setEditingUserCostCenter] = useState(null);
+  const [editCostCenterDraft, setEditCostCenterDraft] = useState('');
+  const [savingCostCenterUser, setSavingCostCenterUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState('user');
   const [adminError, setAdminError] = useState('');
@@ -290,6 +332,7 @@ export default function App() {
   };
 
   const toggleHistory = () => {
+    if (!authToken) { setShowLoginScreen(true); return; }
     setShowHistory(prev => !prev);
     if (!showHistory) loadHistory();
   };
@@ -305,6 +348,7 @@ export default function App() {
   };
 
   const toggleTemplates = () => {
+    if (!authToken) { setShowLoginScreen(true); return; }
     setShowTemplates(prev => !prev);
     if (!showTemplates) loadTemplates();
   };
@@ -354,6 +398,9 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Fehler beim Laden');
       setAdminUsers(data);
+      const ccRes = await authFetch(`${API_URL}/usage/cost-centers`);
+      const ccData = await ccRes.json();
+      if (ccRes.ok) setAdminCostCenters(ccData.costCenters || {});
     } catch (err) {
       setAdminError(err.message);
     }
@@ -363,6 +410,10 @@ export default function App() {
   const toggleAdmin = () => {
     setShowAdmin(prev => !prev);
     if (!showAdmin) loadAdminUsers();
+  };
+
+  const toggleUsage = () => {
+    setShowUsage(prev => !prev);
   };
 
   const changeUserRole = async (username, role) => {
@@ -395,9 +446,36 @@ export default function App() {
     }
   };
 
+  const startEditCostCenter = (username) => {
+    setEditingUserCostCenter(username);
+    setEditCostCenterDraft(adminCostCenters[username] || '');
+  };
+
+  const saveCostCenterAdmin = async (username) => {
+    setSavingCostCenterUser(username);
+    try {
+      const res = await authFetch(`${API_URL}/usage/cost-centers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, costCenter: editCostCenterDraft.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+      setAdminCostCenters(data.costCenters);
+      setEditingUserCostCenter(null);
+    } catch (err) {
+      setAdminError(err.message);
+    }
+    setSavingCostCenterUser(null);
+  };
+
   const createUserAdmin = async () => {
     if (!newUsername.trim() || newPassword.length < 8) {
       setAdminError('Nutzername erforderlich, Passwort mindestens 8 Zeichen.');
+      return;
+    }
+    if (!newCostCenter.trim()) {
+      setAdminError('Kostenstelle ist ein Pflichtfeld.');
       return;
     }
     setAdminError('');
@@ -418,9 +496,16 @@ export default function App() {
         });
       }
 
+      await authFetch(`${API_URL}/usage/cost-centers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: newUsername, costCenter: newCostCenter.trim() })
+      });
+
       setNewUsername('');
       setNewPassword('');
       setNewUserRole('user');
+      setNewCostCenter('');
       loadAdminUsers();
     } catch (err) {
       setAdminError(err.message);
@@ -440,6 +525,7 @@ export default function App() {
   };
 
   const toggleStats = () => {
+    if (!authToken) { setShowLoginScreen(true); return; }
     setShowStats(prev => !prev);
     if (!showStats) loadStats();
   };
@@ -523,6 +609,7 @@ export default function App() {
   };
 
   const sendMessage = async () => {
+    if (!authToken) { setShowLoginScreen(true); return; }
     if (!input.trim() || chatLoading) return;
     const userMsg = input;
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
@@ -836,6 +923,7 @@ export default function App() {
   };
 
   const processExtraction = async () => {
+    if (!authToken) { setShowLoginScreen(true); return; }
     if (activeTab === 'compare') {
       if (files.length === 0 || !compareFileB) return;
     } else if (files.length === 0) {
@@ -856,6 +944,7 @@ export default function App() {
       } else if (activeTab === 'extract-keyvalues') {
         files.forEach(f => formData.append('files', f));
         formData.append('generateReport', generateReport ? 'true' : 'false');
+        formData.append('targetFields', targetFields);
         endpoint = '/extract-keyvalues';
       } else if (activeTab === 'extract-standards') {
         files.forEach(f => formData.append('files', f));
@@ -887,6 +976,7 @@ export default function App() {
   };
 
   const processCompliance = async () => {
+    if (!authToken) { setShowLoginScreen(true); return; }
     if (!referenceFile || files.length === 0) return;
 
     setComplianceLoading(true);
@@ -960,13 +1050,23 @@ export default function App() {
               </div>
 
               <div className="relative">
+                {!authToken ? (
+                  <button
+                    onClick={() => setShowLoginScreen(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors"
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    Anmelden
+                  </button>
+                ) : (
                 <button
                   onClick={() => setShowMoreMenu(prev => !prev)}
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
                 >
                   <MoreHorizontal className="w-4.5 h-4.5" />
                 </button>
-                {showMoreMenu && (
+                )}
+                {showMoreMenu && authToken && (
                   <div className="absolute right-0 top-10 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-20">
                     <div className="px-3.5 py-2 border-b border-slate-100 flex items-center gap-2">
                       <User className="w-3.5 h-3.5 text-slate-400" />
@@ -1000,6 +1100,15 @@ export default function App() {
                       >
                         <Users className="w-4 h-4" />
                         Nutzerverwaltung
+                      </button>
+                    )}
+                    {currentUser?.role === 'admin' && (
+                      <button
+                        onClick={() => { toggleUsage(); setShowMoreMenu(false); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                        Nutzung & Kosten
                       </button>
                     )}
                     <button
@@ -1187,6 +1296,16 @@ export default function App() {
                       className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs outline-none focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
+                  <div className="mb-2">
+                    <input
+                      type="text"
+                      value={newCostCenter}
+                      onChange={(e) => setNewCostCenter(e.target.value)}
+                      placeholder="Kostenstelle (Pflichtfeld, z.B. KST-1000)"
+                      required
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-md text-xs outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
                   <div className="flex gap-2">
                     <select
                       value={newUserRole}
@@ -1210,33 +1329,76 @@ export default function App() {
                 ) : (
                   <div className="space-y-1.5">
                     {adminUsers.map(u => (
-                      <div key={u.username} className="flex items-center justify-between bg-slate-50 rounded-lg p-2.5">
-                        <div className="min-w-0">
-                          <p className="text-sm text-slate-700 truncate">{u.username}</p>
-                          <p className="text-xs text-slate-400">seit {new Date(u.createdAt).toLocaleDateString('de-DE')}</p>
+                      <div key={u.username} className="bg-slate-50 rounded-lg p-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm text-slate-700 truncate">{u.username}</p>
+                            <p className="text-xs text-slate-400">
+                              seit {new Date(u.createdAt).toLocaleDateString('de-DE')}
+                              {adminCostCenters[u.username] && ` · ${adminCostCenters[u.username]}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <select
+                              value={u.role}
+                              onChange={(e) => changeUserRole(u.username, e.target.value)}
+                              disabled={u.username === currentUser?.username}
+                              className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs outline-none disabled:opacity-50"
+                            >
+                              <option value="user">Nutzer</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                            <button
+                              onClick={() => startEditCostCenter(u.username)}
+                              className="p-1.5 hover:bg-slate-200 rounded-md"
+                              title="Kostenstelle bearbeiten"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                            </button>
+                            <button
+                              onClick={() => deleteUserAccount(u.username)}
+                              disabled={u.username === currentUser?.username}
+                              className="p-1.5 hover:bg-red-50 rounded-md disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <select
-                            value={u.role}
-                            onChange={(e) => changeUserRole(u.username, e.target.value)}
-                            disabled={u.username === currentUser?.username}
-                            className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs outline-none disabled:opacity-50"
-                          >
-                            <option value="user">Nutzer</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                          <button
-                            onClick={() => deleteUserAccount(u.username)}
-                            disabled={u.username === currentUser?.username}
-                            className="p-1.5 hover:bg-red-50 rounded-md disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                          </button>
-                        </div>
+
+                        {editingUserCostCenter === u.username && (
+                          <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-200">
+                            <input
+                              type="text"
+                              value={editCostCenterDraft}
+                              onChange={(e) => setEditCostCenterDraft(e.target.value)}
+                              placeholder="Kostenstelle, z.B. KST-1000"
+                              className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded-md text-xs outline-none focus:ring-2 focus:ring-blue-200"
+                            />
+                            <button
+                              onClick={() => saveCostCenterAdmin(u.username)}
+                              disabled={savingCostCenterUser === u.username}
+                              className="px-2.5 py-1 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950 disabled:opacity-50"
+                            >
+                              {savingCostCenterUser === u.username ? '...' : 'Speichern'}
+                            </button>
+                            <button
+                              onClick={() => setEditingUserCostCenter(null)}
+                              className="px-2 py-1 text-slate-400 hover:text-slate-600 text-xs"
+                            >
+                              Abbrechen
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {showUsage && (
+              <div className="mb-4">
+                <UsageReport authFetch={authFetch} />
               </div>
             )}
 
@@ -1273,13 +1435,22 @@ export default function App() {
               })}
             </div>
 
+            {activeTab === 'document-templates' ? (
+              <TemplateEditor authFetch={authFetch} downloadFile={downloadFile} />
+            ) : activeTab === 'exam-grading' ? (
+              <ExamGrading authFetch={authFetch} downloadFile={downloadFile} />
+            ) : activeTab === 'assistant-chat' ? (
+              <Assistant authFetch={authFetch} downloadFile={downloadFile} />
+            ) : (
+            <>
+
             {activeTab === 'compliance' && (
               <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
                 <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Referenzdokument (Anforderungen/Norm)</label>
-                <label className="block cursor-pointer">
+                <label className="block cursor-pointer" onDragOver={onDragOverPrevent} onDrop={(e) => onDropFiles(e, (files) => setReferenceFile(files[0] || null))}>
                   <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center hover:border-slate-400 hover:bg-slate-50 transition-all">
                     <Upload className="w-5 h-5 mx-auto mb-1.5 text-slate-400" />
-                    <p className="text-xs text-slate-500 truncate">{referenceFile ? referenceFile.name : 'PDF wählen'}</p>
+                    <p className="text-xs text-slate-500 truncate">{referenceFile ? referenceFile.name : 'PDF wählen oder hierher ziehen'}</p>
                   </div>
                   <input type="file" accept=".pdf" className="hidden" onChange={(e) => setReferenceFile(e.target.files[0] || null)} />
                 </label>
@@ -1291,20 +1462,20 @@ export default function App() {
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                   <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Version A (alt)</label>
-                  <label className="block cursor-pointer">
+                  <label className="block cursor-pointer" onDragOver={onDragOverPrevent} onDrop={(e) => onDropFiles(e, (files) => setFiles(files[0] ? [files[0]] : []))}>
                     <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center hover:border-slate-400 hover:bg-slate-50 transition-all">
                       <Upload className="w-5 h-5 mx-auto mb-1.5 text-slate-400" />
-                      <p className="text-xs text-slate-500 truncate">{files[0] ? files[0].name : 'PDF wählen'}</p>
+                      <p className="text-xs text-slate-500 truncate">{files[0] ? files[0].name : 'PDF wählen oder hierher ziehen'}</p>
                     </div>
                     <input type="file" accept=".pdf" className="hidden" onChange={(e) => setFiles(e.target.files[0] ? [e.target.files[0]] : [])} />
                   </label>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                   <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Version B (neu)</label>
-                  <label className="block cursor-pointer">
+                  <label className="block cursor-pointer" onDragOver={onDragOverPrevent} onDrop={(e) => onDropFiles(e, (files) => setCompareFileB(files[0] || null))}>
                     <div className="border-2 border-dashed border-slate-200 rounded-lg p-4 text-center hover:border-slate-400 hover:bg-slate-50 transition-all">
                       <Upload className="w-5 h-5 mx-auto mb-1.5 text-slate-400" />
-                      <p className="text-xs text-slate-500 truncate">{compareFileB ? compareFileB.name : 'PDF wählen'}</p>
+                      <p className="text-xs text-slate-500 truncate">{compareFileB ? compareFileB.name : 'PDF wählen oder hierher ziehen'}</p>
                     </div>
                     <input type="file" accept=".pdf" className="hidden" onChange={(e) => setCompareFileB(e.target.files[0] || null)} />
                   </label>
@@ -1521,6 +1692,20 @@ export default function App() {
                 <label className="text-xs text-slate-500 mb-1.5 block">Eigene Suchbegriffe (kommagetrennt)</label>
                 <input type="text" value={redactCustomTerms} onChange={(e) => setRedactCustomTerms(e.target.value)} placeholder="z.B. Projektname X, Firma Y" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200" />
                 <p className="text-xs text-slate-400 mt-2">IBANs, E-Mails und Telefonnummern werden immer automatisch erkannt. Das Ergebnis-PDF ist bildbasiert — Text ist danach wirklich entfernt, nicht nur überdeckt.</p>
+              </div>
+            )}
+
+            {activeTab === 'extract-keyvalues' && (
+              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2 block">Bestimmte Merkmale suchen (optional)</label>
+                <input
+                  type="text"
+                  value={targetFields}
+                  onChange={(e) => setTargetFields(e.target.value)}
+                  placeholder="z.B. Zugfestigkeit, Durchmesser, Härte"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="text-xs text-slate-400 mt-1.5">Kommagetrennt. Leer lassen, um automatisch alle erkennbaren Kennwerte zu finden.</p>
               </div>
             )}
 
@@ -2041,6 +2226,8 @@ export default function App() {
                   </button>
                 )}
               </div>
+            )}
+            </>
             )}
           </div>
         </div>

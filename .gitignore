@@ -9,3 +9,4 @@ frontend/dist/
 *.pdf
 !frontend/public/*.pdf
 *.pdf
+backend/data/

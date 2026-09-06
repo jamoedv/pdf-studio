@@ -361,7 +361,11 @@ class PDFService {
     const dataBuffer = await fs.readFile(inputPath);
     const parser = new PDFParse({ data: dataBuffer });
     const result = await parser.getText();
-    return result.text || '';
+    const rawText = result.text || '';
+    // pdf-parse gibt bei Seiten ohne Text (z.B. gescannte/nicht-OCR'te PDFs) Platzhalter
+    // wie "-- 1 of 2 --" zurück statt eines leeren Strings. Diese müssen entfernt werden,
+    // sonst denkt der nachfolgende Code fälschlich, es gäbe echten Inhalt.
+    return rawText.replace(/--\s*\d+\s*of\s*\d+\s*--/g, '').trim();
   }
 
   async generateReportPDF(outputPath, title, sections) {
@@ -414,8 +418,7 @@ class PDFService {
 
   async extractTables(inputPath, outputPath) {
     const XLSX = require('xlsx');
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
 
@@ -423,7 +426,7 @@ class PDFService {
       throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
     }
 
-    const response = await anthropic.messages.create({
+    const response = await anthropicClient.createMessage({
       model: 'claude-sonnet-4-5',
       max_tokens: 4000,
       system: `Du extrahierst Tabellen aus technischem Dokumenttext (Datenblätter, Prüfberichte, Spezifikationen).
@@ -440,8 +443,11 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt (kein Markdown):
 }
 
 Erkenne auch Tabellen, die durch Text-Layout angedeutet sind. Wenn keine Tabellen erkennbar sind, gib ein leeres "tables" Array zurück. Erfinde keine Werte.`,
-      messages: [{ role: 'user', content: text }]
-    });
+      // Breakpoint HINTER dem Dokumenttext, nicht nur hinter dem (winzigen) System-Prompt -
+      // so wird bei wiederholter Analyse desselben Dokuments auch der eigentliche Inhalt
+      // aus dem Cache gelesen, nicht nur die paar Zeilen Anweisung.
+      messages: [{ role: 'user', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]
+    }, 'extract-tables');
 
     const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     const parsed = parseClaudeJSON(responseText);
@@ -464,9 +470,8 @@ Erkenne auch Tabellen, die durch Text-Layout angedeutet sind. Wenn keine Tabelle
     return { tableCount: parsed.tables ? parsed.tables.length : 0, tables: parsed.tables || [], outputPath };
   }
 
-  async extractKeyValues(inputPath, generateReport = false, reportOutputPath = null) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  async extractKeyValues(inputPath, generateReport = false, reportOutputPath = null, targetFields = '') {
+    const anthropicClient = require('./anthropicClient');
 
     const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
 
@@ -474,20 +479,48 @@ Erkenne auch Tabellen, die durch Text-Layout angedeutet sind. Wenn keine Tabelle
       throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1024,
-      system: `Du extrahierst technische Kennwerte aus Dokumenten (Datenblätter, Zeichnungen, Spezifikationen, Prüfberichte).
+    const hasTargetFields = targetFields && targetFields.trim().length > 0;
+
+    // Statischer Prompt (bewusst OHNE targetFields eingebettet) - so bleibt der gecachte
+    // Präfix (System + Dokumenttext) bei wiederholter Analyse DESSELBEN Dokuments identisch,
+    // auch wenn sich die gesuchten Merkmale von Anfrage zu Anfrage unterscheiden.
+    const systemPrompt = `Du extrahierst Kennwerte aus einem Dokument (Datenblatt, Zeichnung, Spezifikation, Prüfbericht, Vertrag, Rechnung, Brief o.ä.).
 
 Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
 {
-  "documentType": "Einschätzung, z.B. Datenblatt/Prüfbericht/Zeichnung/Spezifikation",
-  "fields": [{"key": "Feldname", "value": "gefundener Wert"}]
+  "documentType": "Einschätzung, z.B. Datenblatt/Prüfbericht/Zeichnung/Spezifikation/Vertrag/Rechnung",
+  "fields": [{"key": "Feldname", "value": "gefundener Wert oder 'nicht gefunden'"}]
 }
 
-Achte besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Toleranzen, Maße/Dimensionen, elektrische/mechanische Kennwerte, Hersteller, Gültigkeitsdatum. Erfinde nichts.`,
-      messages: [{ role: 'user', content: text }]
-    });
+Falls gezielt gesuchte Merkmale genannt werden, ordne sie SINNGEMÄSS zu, nicht nur wörtlich:
+- Der gesuchte Feldname muss NICHT wortwörtlich im Dokument stehen. Interpretiere den Kontext.
+- Beispiel: Gesucht ist "Name" — im Dokument steht aber nur "Freigegeben von: Dr. Julia Berger", "Ansprechpartner: ...", "Unterschrift: ...", "Sachbearbeiter: ..." oder ein Empfänger/Absender in einem Anschreiben. In all diesen Fällen ist die genannte Person der gesuchte "Name".
+- Beispiel: Gesucht ist "Firma" — im Dokument steht der Name eines Unternehmens im Briefkopf, als Adressat/Absender, oder z.B. hinter "c/o". Das ist die gesuchte "Firma".
+- Beispiel: Gesucht ist "Kosten" — im Dokument steht "Gesamtpreis", "Rechnungsbetrag" oder "Summe netto". Ordne den passendsten Betrag zu.
+- Wenn mehrere Kandidaten für ein Merkmal infrage kommen, wähle den, der inhaltlich am ehesten passt, und erkläre nicht — antworte nur mit dem Wert.
+- Erfinde NIEMALS einen Wert, der nicht wörtlich oder sinngemäß im bereitgestellten Text vorkommt. Nur wenn wirklich keine sinnvolle Entsprechung im Dokument existiert, setze den Wert auf "nicht gefunden".
+
+Werden KEINE gezielten Merkmale genannt, achte stattdessen besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Toleranzen, Maße/Dimensionen, elektrische/mechanische Kennwerte, Hersteller, Gültigkeitsdatum. Erfinde nichts.`;
+
+    const instruction = hasTargetFields
+      ? `Extrahiere jetzt GEZIELT die folgenden Merkmale: ${targetFields}`
+      : `Extrahiere jetzt die relevanten technischen Kennwerte aus dem Dokument.`;
+
+    const response = await anthropicClient.createMessage({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1024,
+      system: systemPrompt,
+      // Dokumenttext trägt den Cache-Breakpoint (System + Dokument = gecachter Präfix).
+      // Die variable Merkmals-Anweisung steht DANACH, damit unterschiedliche Suchen im
+      // selben Dokument trotzdem vom Cache profitieren.
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: instruction },
+        ],
+      }],
+    }, 'extract-keyvalues');
 
     const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     const result = parseClaudeJSON(responseText);
@@ -507,8 +540,7 @@ Achte besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Tole
 
   async compareRevisions(pathA, pathB, generateReport = false, reportOutputPath = null) {
     const { diffWords } = require('diff');
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const [textA, textB] = await Promise.all([
       this.extractPdfText(pathA),
@@ -532,12 +564,12 @@ Achte besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Tole
         .join('\n')
         .slice(0, 4000);
 
-      const response = await anthropic.messages.create({
+      const response = await anthropicClient.createMessage({
         model: 'claude-sonnet-4-5',
         max_tokens: 300,
         system: 'Du bekommst eine Liste von Textänderungen zwischen zwei Dokumentversionen (+ = hinzugefügt, - = entfernt). Fasse in 2-3 Sätzen auf Deutsch zusammen, was sich inhaltlich geändert hat. Antworte NUR mit der Zusammenfassung, kein JSON, kein Markdown.',
         messages: [{ role: 'user', content: changedText }]
-      });
+      }, 'compare-revisions');
       summary = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     }
 
@@ -561,8 +593,7 @@ Achte besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Tole
   }
 
   async extractStandards(inputPath, generateReport = false, reportOutputPath = null) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
 
@@ -570,7 +601,7 @@ Achte besonders auf: Teilenummer/Artikelnummer, Revision/Version, Material, Tole
       throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
     }
 
-    const response = await anthropic.messages.create({
+    const response = await anthropicClient.createMessage({
       model: 'claude-sonnet-4-5',
       max_tokens: 1500,
       system: `Du findest Normen- und Standard-Referenzen in technischen Dokumenten (z.B. ISO, DIN, EN, IEC, ANSI, ASTM, VDE, VDI).
@@ -583,8 +614,8 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
 }
 
 Nur tatsächlich im Text vorhandene, klar erkennbare Normen-Referenzen. Keine Duplikate. Wenn keine gefunden werden, leeres Array zurückgeben.`,
-      messages: [{ role: 'user', content: text }]
-    });
+      messages: [{ role: 'user', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]
+    }, 'extract-standards');
 
     const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     const result = parseClaudeJSON(responseText);
@@ -603,8 +634,7 @@ Nur tatsächlich im Text vorhandene, klar erkennbare Normen-Referenzen. Keine Du
   }
 
   async summarizePDF(inputPath) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const text = (await this.extractPdfText(inputPath)).slice(0, 15000);
 
@@ -612,7 +642,7 @@ Nur tatsächlich im Text vorhandene, klar erkennbare Normen-Referenzen. Keine Du
       throw new Error('Kein Text im PDF gefunden (evtl. gescannt — vorher OCR anwenden)');
     }
 
-    const response = await anthropic.messages.create({
+    const response = await anthropicClient.createMessage({
       model: 'claude-sonnet-4-5',
       max_tokens: 600,
       system: `Du fasst Dokumente knapp und praezise auf Deutsch zusammen.
@@ -624,7 +654,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
   "documentType": "kurze Einschaetzung, z.B. Vertrag/Bericht/Datenblatt"
 }`,
       messages: [{ role: 'user', content: text }]
-    });
+    }, 'summarize-pdf');
 
     const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     return parseClaudeJSON(responseText);
@@ -708,14 +738,13 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
   }
 
   async findSensitiveNamesWithAI(pages) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const fullText = pages.map(p => p.words.map(w => w.text).join(' ')).join('\n').slice(0, 12000);
 
     if (!fullText.trim()) return [];
 
-    const response = await anthropic.messages.create({
+    const response = await anthropicClient.createMessage({
       model: 'claude-sonnet-4-5',
       max_tokens: 1000,
       system: `Finde Personennamen und Adressen in diesem Dokumenttext, die als sensible/personenbezogene Daten geschwärzt werden sollten.
@@ -724,7 +753,7 @@ Antworte AUSSCHLIESSLICH mit JSON: {"terms": ["exakter Name 1", "exakte Adresse 
 
 Gib NUR exakte Textstellen zurück, die WÖRTLICH im Text vorkommen. Keine allgemeinen Begriffe, keine Firmennamen, keine Produktbezeichnungen — nur Personennamen und private Adressen. Wenn nichts gefunden wird, leeres Array.`,
       messages: [{ role: 'user', content: fullText }]
-    });
+    }, 'redact-find-names');
 
     const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     try {
@@ -738,13 +767,12 @@ Gib NUR exakte Textstellen zurück, die WÖRTLICH im Text vorkommen. Keine allge
   async findValuesForCustomTerms(pages, customTerms) {
     if (!customTerms || customTerms.length === 0) return [];
 
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const fullText = pages.map(p => p.words.map(w => w.text).join(' ')).join('\n').slice(0, 12000);
     if (!fullText.trim()) return [];
 
-    const response = await anthropic.messages.create({
+    const response = await anthropicClient.createMessage({
       model: 'claude-sonnet-4-5',
       max_tokens: 1000,
       system: `Der Nutzer hat folgende Suchbegriffe angegeben, die auf sensible Informationen hinweisen (z.B. ein Spaltenname einer Tabelle, ein Feldname, ein Themenbereich): ${customTerms.join(', ')}.
@@ -755,7 +783,7 @@ Antworte AUSSCHLIESSLICH mit JSON: {"terms": ["Wert1", "Wert2"]}
 
 Nur woertlich im Text vorkommende Werte. Wenn nichts Passendes gefunden wird, leeres Array.`,
       messages: [{ role: 'user', content: fullText }]
-    });
+    }, 'redact-find-custom-terms');
 
     const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
     try {
@@ -871,8 +899,7 @@ Nur woertlich im Text vorkommende Werte. Wenn nichts Passendes gefunden wird, le
   }
 
   async checkCompliance(referencePath, reportPaths, generateReport = false, reportOutputPath = null) {
-    const Anthropic = require('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropicClient = require('./anthropicClient');
 
     const referenceText = (await this.extractPdfText(referencePath)).slice(0, 12000);
     if (!referenceText.trim()) {
@@ -895,7 +922,7 @@ Nur woertlich im Text vorkommende Werte. Wenn nichts Passendes gefunden wird, le
         continue;
       }
 
-      const response = await anthropic.messages.create({
+      const response = await anthropicClient.createMessage({
         model: 'claude-sonnet-4-5',
         max_tokens: 1500,
         system: `Du prüfst, ob ein Prüfbericht die Anforderungen aus einem Referenzdokument (Norm, Spezifikation) erfüllt.
@@ -911,9 +938,12 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
 
 Vergleiche NUR Kriterien, die im Referenzdokument als Anforderung erkennbar sind (Werte, Toleranzen, Grenzwerte, Pass/Fail-Bedingungen). Berücksichtige Toleranzbereiche korrekt (z.B. "20mm ± 0.005mm" bedeutet 19.995-20.005mm ist bestanden). Wenn ein Kriterium im Bericht nicht vorkommt, markiere es als "nicht_gefunden". "overallResult" ist "nicht_bestanden" wenn MINDESTENS EIN Kriterium fehlschlägt, "unklar" wenn zu viele Kriterien "nicht_gefunden" sind, sonst "bestanden".`,
         messages: [
-          { role: 'user', content: `REFERENZDOKUMENT (Anforderungen):\n${referenceText}\n\n---\n\nPRÜFBERICHT (zu prüfen):\n${reportText}` }
+          { role: 'user', content: [
+            { type: 'text', text: `REFERENZDOKUMENT (Anforderungen):\n${referenceText}`, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: `\n---\n\nPRÜFBERICHT (zu prüfen):\n${reportText}` },
+          ] }
         ]
-      });
+      }, 'compliance-check');
 
       const responseText = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
       try {

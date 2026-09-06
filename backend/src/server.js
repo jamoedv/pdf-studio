@@ -4,13 +4,11 @@ const helmet = require('helmet');
 const compression = require('compression');
 const dotenv = require('dotenv');
 dotenv.config();
-
 const fsSync = require('fs');
 const uploadDir = process.env.UPLOAD_DIR || 'uploads';
 const processedDir = process.env.PROCESSED_DIR || 'processed';
 if (!fsSync.existsSync(uploadDir)) fsSync.mkdirSync(uploadDir, { recursive: true });
 if (!fsSync.existsSync(processedDir)) fsSync.mkdirSync(processedDir, { recursive: true });
-
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const chatRoutes = require('./routes/chat');
@@ -20,13 +18,20 @@ const extractRoutes = require('./routes/extract');
 const intelligenceRoutes = require('./routes/intelligence');
 const toolsRoutes = require('./routes/tools');
 const authRoutes = require('./routes/auth');
+const onedriveCallbackRoutes = require('./routes/onedrive-callback');
+const teamsBotRoutes = require('./routes/teams-bot');
 const statsRoutes = require('./routes/stats');
 const complianceRoutes = require('./routes/compliance');
+const templatesFillRoutes = require('./routes/templates-fill');
+const templatesManageRoutes = require('./routes/templates-manage');
+const examGradingRoutes = require('./routes/exam-grading');
+const assistantRoutes = require('./routes/assistant');
+const workflowsRoutes = require('./routes/workflows');
+const usageRoutes = require('./routes/usage');
+const onedriveRoutes = require('./routes/onedrive');
 const errorHandler = require('./middleware/errorHandler');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.use((req, res, next) => {
   if (req.path.startsWith('/outlook')) {
     helmet({
@@ -60,9 +65,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/outlook', express.static(path.join(__dirname, '..', 'public', 'outlook')));
 app.use('/api/v1/openapi', express.static(path.join(__dirname, '..', 'public', 'openapi')));
+app.use('/api/v1', onedriveCallbackRoutes);
+app.use('/api', teamsBotRoutes);
 app.use('/api/v1', authRoutes);
 app.use('/api/v1', statsRoutes);
 app.use('/api/v1', complianceRoutes);
+app.use('/api/v1', templatesFillRoutes);
+app.use('/api/v1', templatesManageRoutes);
+app.use('/api/v1', examGradingRoutes);
+app.use('/api/v1', assistantRoutes);
+app.use('/api/v1', workflowsRoutes);
+app.use('/api/v1', usageRoutes);
+app.use('/api/v1', onedriveRoutes);
 app.use('/api/v1', apiRoutes);
 app.use('/api/v1', chatRoutes);
 app.use('/api/v1', templatesRoutes);
@@ -70,15 +84,11 @@ app.use('/api/v1', historyRoutes);
 app.use('/api/v1', extractRoutes);
 app.use('/api/v1', intelligenceRoutes);
 app.use('/api/v1/tools', toolsRoutes);
-
 app.get('/api/v1/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
-
 app.use(errorHandler);
-
 app.listen(PORT, () => {
   console.log(`🚀 PDF Processing API running on port ${PORT}`);
 });
-
 module.exports = app;

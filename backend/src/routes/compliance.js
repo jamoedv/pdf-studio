@@ -4,9 +4,7 @@ const upload = require('../middleware/upload');
 const { requireAuth } = require('../middleware/requireAuth');
 const pdfService = require('../services/pdfService');
 
-router.use(requireAuth);
-
-router.post('/compliance-check', upload.fields([
+router.post('/compliance-check', requireAuth, upload.fields([
   { name: 'reference', maxCount: 1 },
   { name: 'reports', maxCount: 20 }
 ]), async (req, res, next) => {
