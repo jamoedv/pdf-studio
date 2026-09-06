@@ -82,11 +82,18 @@ class PdfStudioTeamsBot extends ActivityHandler {
       // mit dem Portal-Login in dieser ersten Phase - siehe Hinweis in der Doku).
       const teamsUser = `teams:${context.activity.from.aadObjectId || context.activity.from.id}`;
 
-      const rawText = (context.activity.text || '').trim().toLowerCase();
-      if (rawText === '/neu' || rawText === '/reset' || rawText === '/new') {
+      const rawText = (context.activity.text || '').trim();
+      const resetMatch = rawText.match(/^\/(neu|reset|new)\b\s*(.*)$/i);
+      let effectiveText = rawText;
+
+      if (resetMatch) {
         conversationStore.clearHistory(conversationId);
-        await context.sendActivity('✅ Verlauf zurückgesetzt — ich starte frisch, ohne den bisherigen Gesprächskontext.');
-        return next();
+        effectiveText = resetMatch[2].trim();
+        if (!effectiveText) {
+          await context.sendActivity('✅ Verlauf zurückgesetzt — ich starte frisch, ohne den bisherigen Gesprächskontext.');
+          return next();
+        }
+        await context.sendActivity('✅ Verlauf zurückgesetzt, bearbeite jetzt deine Anfrage...');
       }
 
       await context.sendActivity({ type: 'typing' });
@@ -100,7 +107,7 @@ class PdfStudioTeamsBot extends ActivityHandler {
         if (downloaded) fileIds.push(downloaded);
       }
 
-      const messageText = (context.activity.text || '').trim() || (fileIds.length > 0 ? 'Analysiere die angehängte(n) Datei(en).' : '');
+      const messageText = effectiveText || (fileIds.length > 0 ? 'Analysiere die angehängte(n) Datei(en).' : '');
       if (!messageText) {
         await context.sendActivity('Beschreib kurz, was ich für dich tun soll — optional mit einer angehängten PDF-Datei. Tipp: "/neu" setzt den Gesprächsverlauf zurück.');
         return next();
