@@ -20,6 +20,7 @@ const toolsRoutes = require('./routes/tools');
 const authRoutes = require('./routes/auth');
 const onedriveCallbackRoutes = require('./routes/onedrive-callback');
 const teamsBotRoutes = require('./routes/teams-bot');
+const teamsDownloadRoutes = require('./routes/teams-download');
 const statsRoutes = require('./routes/stats');
 const complianceRoutes = require('./routes/compliance');
 const templatesFillRoutes = require('./routes/templates-fill');
@@ -74,6 +75,7 @@ app.get('/api/v1/health', (req, res) => {
 });
 app.use('/api/v1', onedriveCallbackRoutes);
 app.use('/api', teamsBotRoutes);
+app.use('/api/v1', teamsDownloadRoutes);
 app.use('/api/v1', authRoutes);
 app.use('/api/v1', statsRoutes);
 app.use('/api/v1', complianceRoutes);

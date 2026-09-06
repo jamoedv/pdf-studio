@@ -11,6 +11,7 @@ const { v4: uuidv4 } = require('uuid');
 const agentEngine = require('./agentEngine');
 const conversationStore = require('./teamsConversationStore');
 const { runWithUser } = require('./anthropicClient');
+const { createDownloadToken } = require('./teamsDownloadService');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
 
@@ -124,12 +125,16 @@ class PdfStudioTeamsBot extends ActivityHandler {
 
         await context.sendActivity(result.reply);
 
-        // Erzeugte Dateien als Datei-Info-Karten anhängen, wenn Teams das im
-        // jeweiligen Kontext unterstützt (Kanal-Uploads sind aktuell nicht
-        // implementiert - Nutzer bekommt stattdessen einen Hinweis mit Dateinamen).
+        // Erzeugte Dateien als klickbare, zeitlich befristete Download-Links senden
+        // (30 Min. gültig) - Teams macht URLs in Nachrichten automatisch anklickbar.
         if (result.outputFiles && result.outputFiles.length > 0) {
-          const names = result.outputFiles.map((f) => f.split(/[/\\]/).pop()).join(', ');
-          await context.sendActivity(`📄 Erzeugte Datei(en): ${names} — Download aktuell nur über das Web-Portal möglich.`);
+          const backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+          const links = result.outputFiles.map((f) => {
+            const name = f.split(/[/\\]/).pop();
+            const token = createDownloadToken(f);
+            return `📄 [${name}](${backendUrl}/api/v1/teams-download/${token})`;
+          }).join('\n');
+          await context.sendActivity(`${links}\n\n_Links sind 30 Minuten gültig._`);
         }
       } catch (error) {
         console.error('Teams-Bot Agentenfehler:', error);
