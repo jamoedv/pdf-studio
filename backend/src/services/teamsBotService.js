@@ -82,6 +82,13 @@ class PdfStudioTeamsBot extends ActivityHandler {
       // mit dem Portal-Login in dieser ersten Phase - siehe Hinweis in der Doku).
       const teamsUser = `teams:${context.activity.from.aadObjectId || context.activity.from.id}`;
 
+      const rawText = (context.activity.text || '').trim().toLowerCase();
+      if (rawText === '/neu' || rawText === '/reset' || rawText === '/new') {
+        conversationStore.clearHistory(conversationId);
+        await context.sendActivity('✅ Verlauf zurückgesetzt — ich starte frisch, ohne den bisherigen Gesprächskontext.');
+        return next();
+      }
+
       await context.sendActivity({ type: 'typing' });
 
       const fileAttachments = (context.activity.attachments || [])
@@ -95,7 +102,7 @@ class PdfStudioTeamsBot extends ActivityHandler {
 
       const messageText = (context.activity.text || '').trim() || (fileIds.length > 0 ? 'Analysiere die angehängte(n) Datei(en).' : '');
       if (!messageText) {
-        await context.sendActivity('Beschreib kurz, was ich für dich tun soll — optional mit einer angehängten PDF-Datei.');
+        await context.sendActivity('Beschreib kurz, was ich für dich tun soll — optional mit einer angehängten PDF-Datei. Tipp: "/neu" setzt den Gesprächsverlauf zurück.');
         return next();
       }
 
