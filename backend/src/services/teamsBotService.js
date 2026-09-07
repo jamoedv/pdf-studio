@@ -2,7 +2,7 @@ const {
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
   ConfigurationServiceClientCredentialFactory,
-  TeamsActivityHandler,
+  ActivityHandler,
   MessageFactory,
 } = require('botbuilder');
 const path = require('path');
@@ -12,7 +12,6 @@ const agentEngine = require('./agentEngine');
 const conversationStore = require('./teamsConversationStore');
 const { runWithUser } = require('./anthropicClient');
 const { createDownloadToken } = require('./teamsDownloadService');
-const graphTokenService = require('./graphTokenService');
 const botGraphAuth = require('./botGraphAuth');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
@@ -99,34 +98,30 @@ const ONEDRIVE_TOOLS = [
   },
 ];
 
-// Führt die OneDrive-Werkzeuge aus - prüft zuerst, ob der Nutzer bereits ein
-// gültiges Graph-Token hat (über die Bot-Framework-OAuth-Verbindung "graph").
-// Falls nicht, wird eine Anmelde-Karte geschickt und Claude erfährt, dass es
-// noch keinen Zugriff gibt, statt einen kryptischen Fehler zu bekommen.
-function makeOneDriveExecutor(context, adapter, username) {
+// Führt die OneDrive-Werkzeuge aus - prüft zuerst, ob der Nutzer bereits verbunden
+// ist. Falls nicht, bekommt er einen normalen Anmelde-Link (denselben OAuth-Flow
+// wie im Web-Portal) statt einer Bot-Framework-eigenen Anmelde-Karte.
+function makeOneDriveExecutor(username) {
   return async (name, input) => {
-    let token = await botGraphAuth.getCachedGraphToken(context, adapter);
-    if (!token) {
-      const stored = graphTokenService.getTokens(username);
-      // Fallback: evtl. schon vorhandenes, selbst verwaltetes Token nutzen
-      // (z.B. falls die Bot-Framework-eigene Zwischenspeicherung abgelaufen ist).
-      token = stored?.accessToken || null;
+    if (!botGraphAuth.isConnected(username)) {
+      const link = botGraphAuth.getConnectLink(username);
+      return {
+        error: 'not_connected',
+        message: `Der Nutzer ist noch nicht mit Microsoft verbunden. Schick ihm GENAU diesen Satz als Antwort (den Link unverändert übernehmen): "Verbinde zuerst dein Microsoft-Konto, dann wiederhole deine Anfrage: ${link}"`,
+      };
     }
 
-    if (!token) {
-      await botGraphAuth.sendSignInCard(context, adapter);
-      return { error: 'not_connected', message: 'Der Nutzer wurde gerade aufgefordert, sich über die Anmelde-Karte mit Microsoft zu verbinden. Bitte antworte kurz, dass er sich zuerst verbinden und die Anfrage danach wiederholen soll.' };
-    }
+    const token = await botGraphAuth.getValidToken(username);
 
     if (name === 'onedrive_list_files') {
-      const items = await botGraphAuth.listOneDriveRoot(token, input.folderId);
+      const items = await botGraphAuth.listOneDriveRoot(username, input.folderId);
       return { items };
     }
 
     if (name === 'onedrive_import_file') {
       const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
       const destPath = path.join(UPLOAD_DIR, `${uuidv4()}_${safeName}`);
-      await botGraphAuth.downloadOneDriveFile(token, input.itemId, destPath);
+      await botGraphAuth.downloadOneDriveFile(username, input.itemId, destPath);
       return { fileId: destPath, filename: input.filename };
     }
 
@@ -134,7 +129,7 @@ function makeOneDriveExecutor(context, adapter, username) {
   };
 }
 
-class PdfStudioTeamsBot extends TeamsActivityHandler {
+class PdfStudioTeamsBot extends ActivityHandler {
   constructor() {
     super();
 
@@ -176,8 +171,7 @@ class PdfStudioTeamsBot extends TeamsActivityHandler {
       }
 
       const history = conversationStore.getHistory(conversationId);
-      const adapter = getAdapter();
-      const oneDriveExecutor = makeOneDriveExecutor(context, adapter, teamsUser);
+      const oneDriveExecutor = makeOneDriveExecutor(teamsUser);
 
       try {
         const result = await runWithUser(teamsUser, () =>
@@ -223,32 +217,6 @@ class PdfStudioTeamsBot extends TeamsActivityHandler {
       }
       await next();
     });
-  }
-
-  // Wird von Teams aufgerufen, nachdem der Nutzer die Anmelde-Karte bestätigt hat -
-  // schließt den Token-Austausch ab (TeamsActivityHandler kümmert sich um das
-  // Erkennen dieser speziellen "invoke"-Aktivität, wir müssen nur noch reagieren).
-  async handleTeamsSigninVerifyState(context, query) {
-    const adapter = getAdapter();
-    try {
-      const tokenResponse = await adapter.getUserToken(context, botGraphAuth.CONNECTION_NAME, query.state);
-      if (tokenResponse?.token) {
-        // Zusätzlich in unserem eigenen Speicher ablegen, als Fallback falls die
-        // Bot-Framework-eigene Zwischenspeicherung abläuft (kein Refresh-Mechanismus
-        // dafür in dieser ersten Version - bei Ablauf einfach erneut verbinden).
-        graphTokenService.saveTokens(botGraphAuth.teamsUsername(context), {
-          access_token: tokenResponse.token,
-          refresh_token: null,
-          expires_in: 3600,
-        });
-        await context.sendActivity('✅ Erfolgreich mit Microsoft verbunden! Du kannst deine Anfrage jetzt wiederholen.');
-      } else {
-        await context.sendActivity('Die Anmeldung konnte nicht abgeschlossen werden. Bitte versuch es nochmal.');
-      }
-    } catch (error) {
-      console.error('Teams Sign-in Fehler:', error);
-      await context.sendActivity('Die Anmeldung ist fehlgeschlagen. Bitte versuch es nochmal.');
-    }
   }
 }
 
