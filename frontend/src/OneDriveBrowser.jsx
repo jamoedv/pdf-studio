@@ -3,7 +3,7 @@ import { X, Loader2, Folder, FileText, ChevronRight, Cloud, Building2, RefreshCw
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
-export default function OneDriveBrowser({ authFetch, mode, onSelect, onSaveHere, onClose }) {
+export default function OneDriveBrowser({ authFetch, mode, onSelect, onSaveHere, onClose, confirmLabel = 'Hier speichern' }) {
   const [connected, setConnected] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [source, setSource] = useState('onedrive'); // 'onedrive' | 'sharepoint'
@@ -351,13 +351,17 @@ export default function OneDriveBrowser({ authFetch, mode, onSelect, onSaveHere,
                   <div className="p-3 border-t border-slate-100">
                     <button
                       onClick={() => onSaveHere({
+                        source,
+                        siteId: source === 'sharepoint' ? selectedSite?.id : undefined,
+                        siteLabel: source === 'sharepoint' ? selectedSite?.name : undefined,
                         driveId: source === 'sharepoint' ? (breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].driveId : undefined) : undefined,
                         folderId: currentFolderId,
+                        folderLabel: breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].name : (source === 'sharepoint' ? selectedSite?.name : 'OneDrive (Wurzelverzeichnis)'),
                       })}
                       disabled={source === 'sharepoint' && breadcrumb.length === 0}
                       className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      {source === 'sharepoint' && breadcrumb.length === 0 ? 'Bitte erst eine Bibliothek öffnen' : 'Hier speichern'}
+                      {source === 'sharepoint' && breadcrumb.length === 0 ? 'Bitte erst eine Bibliothek öffnen' : confirmLabel}
                     </button>
                   </div>
                 )}

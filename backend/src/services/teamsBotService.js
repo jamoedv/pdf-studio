@@ -4,6 +4,7 @@ const {
   ConfigurationServiceClientCredentialFactory,
   ActivityHandler,
   MessageFactory,
+  TurnContext,
 } = require('botbuilder');
 const path = require('path');
 const fs = require('fs');
@@ -13,6 +14,7 @@ const conversationStore = require('./teamsConversationStore');
 const { runWithUser } = require('./anthropicClient');
 const { createDownloadToken } = require('./teamsDownloadService');
 const botGraphAuth = require('./botGraphAuth');
+const teamsConvRefStore = require('./teamsConversationRefStore');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
 
@@ -232,6 +234,14 @@ class PdfStudioTeamsBot extends ActivityHandler {
       // mit dem Portal-Login in dieser ersten Phase - siehe Hinweis in der Doku).
       const teamsUser = botGraphAuth.teamsUsername(context);
 
+      // Für spätere proaktive Benachrichtigungen (z.B. Ordner-Überwachung) merken,
+      // wie man diesen Nutzer wieder erreichen kann.
+      teamsConvRefStore.saveReference(
+        teamsUser,
+        TurnContext.getConversationReference(context.activity),
+        context.activity.from.name
+      );
+
       const rawText = (context.activity.text || '').trim();
       const resetMatch = rawText.match(/^\/(neu|reset|new)\b\s*(.*)$/i);
       let effectiveText = rawText;
@@ -316,4 +326,21 @@ class PdfStudioTeamsBot extends ActivityHandler {
 
 const bot = new PdfStudioTeamsBot();
 
-module.exports = { getAdapter, bot };
+// Schickt eine Nachricht an einen Teams-Nutzer, OHNE dass dieser zuerst selbst
+// geschrieben haben muss (z.B. für Ordner-Überwachungs-Benachrichtigungen) -
+// braucht eine zuvor gespeicherte Konversations-Referenz (siehe teamsConvRefStore).
+async function sendProactiveMessage(teamsUsername, text) {
+  const ref = teamsConvRefStore.getReference(teamsUsername);
+  if (!ref) throw new Error(`Keine Konversations-Referenz für ${teamsUsername} - Nutzer muss dem Bot zuerst einmal geschrieben haben.`);
+
+  const adapter = getAdapter();
+  await adapter.continueConversationAsync(
+    process.env.TEAMS_BOT_APP_ID,
+    ref.conversationReference,
+    async (context) => {
+      await context.sendActivity(text);
+    }
+  );
+}
+
+module.exports = { getAdapter, bot, sendProactiveMessage };

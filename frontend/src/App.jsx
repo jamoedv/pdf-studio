@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff, LogOut, User, Users, Shield, BarChart3, ClipboardCheck, Plus, GraduationCap, DollarSign, Pencil } from 'lucide-react';
+import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff, LogOut, User, Users, Shield, BarChart3, ClipboardCheck, Plus, GraduationCap, DollarSign, Pencil, FolderCog } from 'lucide-react';
+import WatchedFolders from './WatchedFolders';
 import TemplateEditor from './TemplateEditor';
 import ExamGrading from './ExamGrading';
 import Assistant from './Assistant';
@@ -280,6 +281,7 @@ export default function App() {
 
   const [showAdmin, setShowAdmin] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [showWatchedFolders, setShowWatchedFolders] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [newUsername, setNewUsername] = useState('');
@@ -414,6 +416,10 @@ export default function App() {
 
   const toggleUsage = () => {
     setShowUsage(prev => !prev);
+  };
+
+  const toggleWatchedFolders = () => {
+    setShowWatchedFolders(prev => !prev);
   };
 
   const changeUserRole = async (username, role) => {
@@ -1112,6 +1118,13 @@ export default function App() {
                       </button>
                     )}
                     <button
+                      onClick={() => { toggleWatchedFolders(); setShowMoreMenu(false); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      <FolderCog className="w-4 h-4" />
+                      Ordner-Überwachung
+                    </button>
+                    <button
                       onClick={logout}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-slate-100"
                     >
@@ -1399,6 +1412,12 @@ export default function App() {
             {showUsage && (
               <div className="mb-4">
                 <UsageReport authFetch={authFetch} />
+              </div>
+            )}
+
+            {showWatchedFolders && (
+              <div className="mb-4">
+                <WatchedFolders authFetch={authFetch} />
               </div>
             )}
 

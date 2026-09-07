@@ -21,6 +21,8 @@ const authRoutes = require('./routes/auth');
 const onedriveCallbackRoutes = require('./routes/onedrive-callback');
 const teamsBotRoutes = require('./routes/teams-bot');
 const teamsDownloadRoutes = require('./routes/teams-download');
+const watchedFoldersRoutes = require('./routes/watched-folders');
+const watchedFolderPoller = require('./services/watchedFolderPoller');
 const statsRoutes = require('./routes/stats');
 const complianceRoutes = require('./routes/compliance');
 const templatesFillRoutes = require('./routes/templates-fill');
@@ -76,6 +78,7 @@ app.get('/api/v1/health', (req, res) => {
 app.use('/api/v1', onedriveCallbackRoutes);
 app.use('/api', teamsBotRoutes);
 app.use('/api/v1', teamsDownloadRoutes);
+app.use('/api/v1', watchedFoldersRoutes);
 app.use('/api/v1', authRoutes);
 app.use('/api/v1', statsRoutes);
 app.use('/api/v1', complianceRoutes);
@@ -96,5 +99,10 @@ app.use('/api/v1/tools', toolsRoutes);
 app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 PDF Processing API running on port ${PORT}`);
+  try {
+    watchedFolderPoller.startPolling(5);
+  } catch (err) {
+    console.error('Ordner-Überwachung konnte nicht gestartet werden:', err.message);
+  }
 });
 module.exports = app;

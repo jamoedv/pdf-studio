@@ -4,7 +4,7 @@ const tokenStore = require('./graphTokenService');
 const TENANT = process.env.AZURE_TENANT_ID || 'common';
 const CLIENT_ID = process.env.AZURE_CLIENT_ID;
 const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET;
-const SCOPES = 'offline_access User.Read Files.ReadWrite Sites.ReadWrite.All';
+const SCOPES = 'offline_access User.Read Files.ReadWrite Sites.ReadWrite.All Mail.Send';
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
 function getRedirectUri() {
@@ -234,6 +234,23 @@ async function uploadItem(username, { driveId, folderId, filename }, filePath) {
   return await res.json();
 }
 
+// Verschickt eine E-Mail über Microsoft Graph im Namen des verbundenen Nutzers -
+// braucht keine separate SMTP-Konfiguration, nutzt die bereits vorhandene
+// OneDrive/SharePoint-Verbindung des Nutzers mit.
+async function sendMail(username, { to, subject, body }) {
+  await graphFetch(username, '/me/sendMail', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'Text', content: body },
+        toRecipients: [{ emailAddress: { address: to } }],
+      },
+    }),
+  });
+}
+
 module.exports = {
   getAuthUrl,
   verifyState,
@@ -245,4 +262,5 @@ module.exports = {
   listSharePointFolder,
   downloadItem,
   uploadItem,
+  sendMail,
 };
