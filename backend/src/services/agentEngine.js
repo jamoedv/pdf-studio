@@ -426,8 +426,11 @@ function sanitizeHistory(history) {
 // Zentrale Agenten-Schleife, gemeinsam genutzt vom Web-Assistenten (routes/assistant.js)
 // und dem Teams-Bot (routes/teams-bot.js) - identische Werkzeuge, identisches Verhalten,
 // egal über welchen Kanal der Nutzer damit spricht.
-async function runAgentLoop({ history, message, fileIds, model }) {
+// extraTools/extraExecutor erlauben kanalspezifische Zusatz-Werkzeuge (z.B. OneDrive-Zugriff
+// nur im Teams-Bot, über dessen eigenes OAuth), ohne die Werkzeugliste des Web-Portals zu ändern.
+async function runAgentLoop({ history, message, fileIds, model, extraTools = [], extraExecutor = null }) {
   const resolvedModel = ALLOWED_MODELS[model] || ALLOWED_MODELS[DEFAULT_MODEL];
+  const allTools = extraTools.length > 0 ? [...TOOLS, ...extraTools] : TOOLS;
 
   let userContent = message;
   if (fileIds && fileIds.length > 0) {
@@ -445,7 +448,7 @@ async function runAgentLoop({ history, message, fileIds, model }) {
       model: resolvedModel,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
-      tools: TOOLS,
+      tools: allTools,
       cache_control: { type: 'ephemeral' },
       messages,
     }, 'assistant-chat');
@@ -462,7 +465,11 @@ async function runAgentLoop({ history, message, fileIds, model }) {
     for (const block of toolUseBlocks) {
       let resultContent;
       try {
-        resultContent = await executeTool(block.name, block.input, outputFiles);
+        // Kanalspezifische Zusatz-Werkzeuge zuerst prüfen, sonst normale Engine-Werkzeuge.
+        const isExtraTool = extraExecutor && extraTools.some((t) => t.name === block.name);
+        resultContent = isExtraTool
+          ? await extraExecutor(block.name, block.input)
+          : await executeTool(block.name, block.input, outputFiles);
       } catch (err) {
         resultContent = { error: err.message };
       }

@@ -2,7 +2,7 @@ const {
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
   ConfigurationServiceClientCredentialFactory,
-  ActivityHandler,
+  TeamsActivityHandler,
   MessageFactory,
 } = require('botbuilder');
 const path = require('path');
@@ -12,6 +12,8 @@ const agentEngine = require('./agentEngine');
 const conversationStore = require('./teamsConversationStore');
 const { runWithUser } = require('./anthropicClient');
 const { createDownloadToken } = require('./teamsDownloadService');
+const graphTokenService = require('./graphTokenService');
+const botGraphAuth = require('./botGraphAuth');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
 
@@ -62,7 +64,6 @@ async function downloadTeamsAttachment(attachment) {
   const downloadUrl = attachment.content?.downloadUrl || attachment.contentUrl;
   if (!downloadUrl) return null;
 
-
   const res = await fetch(downloadUrl);
   if (!res.ok) return null;
   const buffer = Buffer.from(await res.arrayBuffer());
@@ -73,7 +74,67 @@ async function downloadTeamsAttachment(attachment) {
   return { fileId: destPath, filename: attachment.name || safeName };
 }
 
-class PdfStudioTeamsBot extends ActivityHandler {
+// Zusätzliche Werkzeuge, NUR im Teams-Bot verfügbar (nicht im Web-Portal, das seine
+// eigene OneDrive-Anbindung über eine UI-Komponente hat, nicht über den Agenten).
+const ONEDRIVE_TOOLS = [
+  {
+    name: 'onedrive_list_files',
+    description: 'Listet Dateien/Ordner im OneDrive des Teams-Nutzers auf. Ohne folderId wird das Wurzelverzeichnis gezeigt.',
+    input_schema: {
+      type: 'object',
+      properties: { folderId: { type: 'string', description: 'Optional: id eines Unterordners aus einem vorherigen Aufruf' } },
+    },
+  },
+  {
+    name: 'onedrive_import_file',
+    description: 'Lädt eine Datei aus dem OneDrive des Nutzers herunter und macht sie als fileId für weitere Werkzeuge verfügbar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        itemId: { type: 'string', description: 'id der Datei aus onedrive_list_files' },
+        filename: { type: 'string' },
+      },
+      required: ['itemId', 'filename'],
+    },
+  },
+];
+
+// Führt die OneDrive-Werkzeuge aus - prüft zuerst, ob der Nutzer bereits ein
+// gültiges Graph-Token hat (über die Bot-Framework-OAuth-Verbindung "graph").
+// Falls nicht, wird eine Anmelde-Karte geschickt und Claude erfährt, dass es
+// noch keinen Zugriff gibt, statt einen kryptischen Fehler zu bekommen.
+function makeOneDriveExecutor(context, adapter, username) {
+  return async (name, input) => {
+    let token = await botGraphAuth.getCachedGraphToken(context, adapter);
+    if (!token) {
+      const stored = graphTokenService.getTokens(username);
+      // Fallback: evtl. schon vorhandenes, selbst verwaltetes Token nutzen
+      // (z.B. falls die Bot-Framework-eigene Zwischenspeicherung abgelaufen ist).
+      token = stored?.accessToken || null;
+    }
+
+    if (!token) {
+      await botGraphAuth.sendSignInCard(context, adapter);
+      return { error: 'not_connected', message: 'Der Nutzer wurde gerade aufgefordert, sich über die Anmelde-Karte mit Microsoft zu verbinden. Bitte antworte kurz, dass er sich zuerst verbinden und die Anfrage danach wiederholen soll.' };
+    }
+
+    if (name === 'onedrive_list_files') {
+      const items = await botGraphAuth.listOneDriveRoot(token, input.folderId);
+      return { items };
+    }
+
+    if (name === 'onedrive_import_file') {
+      const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const destPath = path.join(UPLOAD_DIR, `${uuidv4()}_${safeName}`);
+      await botGraphAuth.downloadOneDriveFile(token, input.itemId, destPath);
+      return { fileId: destPath, filename: input.filename };
+    }
+
+    return { error: `Unbekanntes Werkzeug: ${name}` };
+  };
+}
+
+class PdfStudioTeamsBot extends TeamsActivityHandler {
   constructor() {
     super();
 
@@ -81,7 +142,7 @@ class PdfStudioTeamsBot extends ActivityHandler {
       const conversationId = context.activity.conversation.id;
       // Teams-Identität als Pseudo-Nutzername fürs Tracking (kein Konten-Abgleich
       // mit dem Portal-Login in dieser ersten Phase - siehe Hinweis in der Doku).
-      const teamsUser = `teams:${context.activity.from.aadObjectId || context.activity.from.id}`;
+      const teamsUser = botGraphAuth.teamsUsername(context);
 
       const rawText = (context.activity.text || '').trim();
       const resetMatch = rawText.match(/^\/(neu|reset|new)\b\s*(.*)$/i);
@@ -110,15 +171,23 @@ class PdfStudioTeamsBot extends ActivityHandler {
 
       const messageText = effectiveText || (fileIds.length > 0 ? 'Analysiere die angehängte(n) Datei(en).' : '');
       if (!messageText) {
-        await context.sendActivity('Beschreib kurz, was ich für dich tun soll — optional mit einer angehängten PDF-Datei. Tipp: "/neu" setzt den Gesprächsverlauf zurück.');
+        await context.sendActivity('Beschreib kurz, was ich für dich tun soll — optional mit einer angehängten PDF-Datei oder "hol Bericht.pdf aus meinem OneDrive". Tipp: "/neu" setzt den Gesprächsverlauf zurück.');
         return next();
       }
 
       const history = conversationStore.getHistory(conversationId);
+      const adapter = getAdapter();
+      const oneDriveExecutor = makeOneDriveExecutor(context, adapter, teamsUser);
 
       try {
         const result = await runWithUser(teamsUser, () =>
-          agentEngine.runAgentLoop({ history, message: messageText, fileIds })
+          agentEngine.runAgentLoop({
+            history,
+            message: messageText,
+            fileIds,
+            extraTools: ONEDRIVE_TOOLS,
+            extraExecutor: oneDriveExecutor,
+          })
         );
 
         conversationStore.saveHistory(conversationId, result.history);
@@ -148,12 +217,38 @@ class PdfStudioTeamsBot extends ActivityHandler {
       for (const member of context.activity.membersAdded) {
         if (member.id !== context.activity.recipient.id) {
           await context.sendActivity(MessageFactory.text(
-            'Hallo! Ich bin der PDF-Studio-Assistent. Beschreib mir eine Aufgabe (z.B. "dreh dieses PDF um 90 Grad") und häng optional eine Datei an.'
+            'Hallo! Ich bin der PDF-Studio-Assistent. Beschreib mir eine Aufgabe (z.B. "dreh dieses PDF um 90 Grad" oder "hol Bericht.pdf aus meinem OneDrive") und häng optional eine Datei an.'
           ));
         }
       }
       await next();
     });
+  }
+
+  // Wird von Teams aufgerufen, nachdem der Nutzer die Anmelde-Karte bestätigt hat -
+  // schließt den Token-Austausch ab (TeamsActivityHandler kümmert sich um das
+  // Erkennen dieser speziellen "invoke"-Aktivität, wir müssen nur noch reagieren).
+  async handleTeamsSigninVerifyState(context, query) {
+    const adapter = getAdapter();
+    try {
+      const tokenResponse = await adapter.getUserToken(context, botGraphAuth.CONNECTION_NAME, query.state);
+      if (tokenResponse?.token) {
+        // Zusätzlich in unserem eigenen Speicher ablegen, als Fallback falls die
+        // Bot-Framework-eigene Zwischenspeicherung abläuft (kein Refresh-Mechanismus
+        // dafür in dieser ersten Version - bei Ablauf einfach erneut verbinden).
+        graphTokenService.saveTokens(botGraphAuth.teamsUsername(context), {
+          access_token: tokenResponse.token,
+          refresh_token: null,
+          expires_in: 3600,
+        });
+        await context.sendActivity('✅ Erfolgreich mit Microsoft verbunden! Du kannst deine Anfrage jetzt wiederholen.');
+      } else {
+        await context.sendActivity('Die Anmeldung konnte nicht abgeschlossen werden. Bitte versuch es nochmal.');
+      }
+    } catch (error) {
+      console.error('Teams Sign-in Fehler:', error);
+      await context.sendActivity('Die Anmeldung ist fehlgeschlagen. Bitte versuch es nochmal.');
+    }
   }
 }
 
