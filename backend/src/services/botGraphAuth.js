@@ -45,6 +45,16 @@ async function downloadSharePointFile(username, driveId, itemId, destPath) {
   return graphService.downloadItem(username, { driveId, itemId }, destPath);
 }
 
+// fileId ist hier der lokale Serverpfad einer bereits erzeugten Datei (z.B. aus
+// einem vorherigen Werkzeug-Ergebnis wie {fileId: "/app/processed/..."}).
+async function uploadToOneDrive(username, filename, folderId, filePath) {
+  return graphService.uploadItem(username, { folderId, filename }, filePath);
+}
+
+async function uploadToSharePoint(username, driveId, filename, folderId, filePath) {
+  return graphService.uploadItem(username, { driveId, folderId, filename }, filePath);
+}
+
 module.exports = {
   teamsUsername,
   isConnected,
@@ -55,4 +65,6 @@ module.exports = {
   listSharePointSites,
   listSharePointFolder,
   downloadSharePointFile,
+  uploadToOneDrive,
+  uploadToSharePoint,
 };

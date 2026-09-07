@@ -127,17 +127,45 @@ const ONEDRIVE_TOOLS = [
       required: ['driveId', 'itemId', 'filename'],
     },
   },
+  {
+    name: 'onedrive_export_file',
+    description: 'Lädt eine zuvor erzeugte/bearbeitete Datei (fileId aus einem anderen Werkzeug-Ergebnis) ins OneDrive des Nutzers hoch. Ohne folderId landet sie im Wurzelverzeichnis. Funktioniert nur für Dateien bis 4 MB.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Serverpfad aus einem vorherigen Werkzeug-Ergebnis' },
+        filename: { type: 'string', description: 'Gewünschter Dateiname in OneDrive' },
+        folderId: { type: 'string', description: 'Optional: Ziel-Ordner-id aus onedrive_list_files' },
+      },
+      required: ['fileId', 'filename'],
+    },
+  },
+  {
+    name: 'sharepoint_export_file',
+    description: 'Lädt eine zuvor erzeugte/bearbeitete Datei (fileId aus einem anderen Werkzeug-Ergebnis) in eine SharePoint-Dokumentbibliothek hoch. Funktioniert nur für Dateien bis 4 MB.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        fileId: { type: 'string', description: 'Serverpfad aus einem vorherigen Werkzeug-Ergebnis' },
+        filename: { type: 'string', description: 'Gewünschter Dateiname in SharePoint' },
+        driveId: { type: 'string', description: 'id der Dokumentbibliothek aus sharepoint_browse' },
+        folderId: { type: 'string', description: 'Optional: Ziel-Unterordner-id' },
+      },
+      required: ['fileId', 'filename', 'driveId'],
+    },
+  },
 ];
 
 // Führt die OneDrive-Werkzeuge aus - prüft zuerst, ob der Nutzer bereits verbunden
 // ist. Falls nicht, bekommt er einen normalen Anmelde-Link (denselben OAuth-Flow
 // wie im Web-Portal) statt einer Bot-Framework-eigenen Anmelde-Karte.
-const ONEDRIVE_SYSTEM_PROMPT_ADDENDUM = `Du hast zusätzlich Zugriff auf das OneDrive und SharePoint des Nutzers (onedrive_list_files, onedrive_import_file, sharepoint_list_sites, sharepoint_browse, sharepoint_import_file). Wichtig für den Umgang damit:
+const ONEDRIVE_SYSTEM_PROMPT_ADDENDUM = `Du hast zusätzlich Zugriff auf das OneDrive und SharePoint des Nutzers (onedrive_list_files, onedrive_import_file, onedrive_export_file, sharepoint_list_sites, sharepoint_browse, sharepoint_import_file, sharepoint_export_file). Wichtig für den Umgang damit:
 - Wenn der Nutzer unspezifisch nach Dateien fragt (z.B. "zeig mir meine Dateien", "ich will was von OneDrive/SharePoint bearbeiten", ohne exakten Dateinamen) oder mehrere Dateien bearbeiten möchte: rufe zuerst das passende Lese-Werkzeug auf und zeige die Ergebnisse als nummerierte, gut lesbare Liste (Name + ob Ordner/Bibliothek). Der Nutzer kann dann per Namen oder Nummer antworten.
 - Bei SharePoint: erst sharepoint_list_sites, dann sharepoint_browse mit der gewählten siteId (ohne driveId zeigt das die Dokumentbibliotheken der Seite, meist gibt es nur "Documents" - danach mit der driveId erneut aufrufen für den Inhalt).
 - Merke dir aus einer gezeigten Liste, welche Nummer zu welcher itemId/driveId/siteId gehört, damit du bei "importier Nummer 3" die richtigen IDs verwendest, ohne erneut zu fragen.
 - Für mehrere Dateien auf einmal: rufe das jeweilige Import-Werkzeug für jede gewünschte Datei einzeln auf, dann verarbeite sie wie gewünscht.
-- Wenn ein Lese-Werkzeug einen Ordner zurückgibt (isFolder), kannst du mit folderId erneut aufrufen, um hineinzuschauen.`;
+- Wenn ein Lese-Werkzeug einen Ordner zurückgibt (isFolder), kannst du mit folderId erneut aufrufen, um hineinzuschauen.
+- Wenn der Nutzer möchte, dass ein Ergebnis (z.B. nach compress_pdf, rotate_pdf etc.) zurück nach OneDrive/SharePoint gespeichert wird, statt es nur als Download-Link zu bekommen: nutze die fileId aus dem vorherigen Werkzeug-Ergebnis direkt für onedrive_export_file/sharepoint_export_file. Weise darauf hin, dass das aktuell nur für Dateien bis 4 MB funktioniert.`;
 
 function makeOneDriveExecutor(username) {
   return async (name, input) => {
@@ -178,6 +206,16 @@ function makeOneDriveExecutor(username) {
       const destPath = path.join(UPLOAD_DIR, `${uuidv4()}_${safeName}`);
       await botGraphAuth.downloadSharePointFile(username, input.driveId, input.itemId, destPath);
       return { fileId: destPath, filename: input.filename };
+    }
+
+    if (name === 'onedrive_export_file') {
+      const result = await botGraphAuth.uploadToOneDrive(username, input.filename, input.folderId, input.fileId);
+      return { success: true, webUrl: result.webUrl, message: `"${input.filename}" wurde in OneDrive gespeichert.` };
+    }
+
+    if (name === 'sharepoint_export_file') {
+      const result = await botGraphAuth.uploadToSharePoint(username, input.driveId, input.filename, input.folderId, input.fileId);
+      return { success: true, webUrl: result.webUrl, message: `"${input.filename}" wurde in SharePoint gespeichert.` };
     }
 
     return { error: `Unbekanntes Werkzeug: ${name}` };
