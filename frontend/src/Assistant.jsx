@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Send, Paperclip, X, Loader2, Bot, User, Download, Sparkles, BookOpen, Trash2, FileText, Workflow, ChevronDown, ChevronRight, Pencil, Plus, Check as CheckIcon, Cloud } from 'lucide-react';
 import OneDriveBrowser from './OneDriveBrowser';
+import Modal from './Modal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -331,7 +332,7 @@ export default function Assistant({ authFetch, downloadFile }) {
       </div>
 
       {showLibrary && (
-        <div className="border-b border-slate-100 bg-white max-h-64 overflow-y-auto">
+        <Modal title="Bibliothek" onClose={() => setShowLibrary(false)}>
           <div className="flex items-center gap-1 p-2 border-b border-slate-100 sticky top-0 bg-white">
             <button
               onClick={() => setLibraryTab('workflows')}
@@ -344,9 +345,6 @@ export default function Assistant({ authFetch, downloadFile }) {
               className={`px-3 py-1.5 rounded-md text-xs font-medium ${libraryTab === 'templates' ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}
             >
               <FileText className="w-3.5 h-3.5 inline mr-1" /> Vorlagen ({templates.length})
-            </button>
-            <button onClick={() => setShowLibrary(false)} className="ml-auto text-slate-400 hover:text-slate-600 p-1">
-              <X className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -495,7 +493,7 @@ export default function Assistant({ authFetch, downloadFile }) {
               ))
             )}
           </div>
-        </div>
+        </Modal>
       )}
 
       <div className="flex-1 overflow-y-auto p-5 space-y-5">

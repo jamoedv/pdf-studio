@@ -34,6 +34,7 @@ const categories = [
   {
     id: 'basics',
     label: 'Grundfunktionen',
+    group: 'no-ai',
     tabs: [
       { id: 'compress', icon: CompressIcon, label: 'Compress' },
       { id: 'merge', icon: MergeIconSVG, label: 'Merge' },
@@ -44,18 +45,20 @@ const categories = [
   {
     id: 'edit',
     label: 'Bearbeiten',
+    group: 'no-ai',
     tabs: [
       { id: 'rotate', icon: RotateCw, label: 'Rotate' },
       { id: 'watermark', icon: Stamp, label: 'Watermark' },
       { id: 'password', icon: Lock, label: 'Password' },
       { id: 'metadata', icon: Tag, label: 'Metadata' },
+      { id: 'ocr', icon: ScanText, label: 'OCR' },
     ]
   },
   {
     id: 'analyze',
     label: 'Analyse',
+    group: 'ai',
     tabs: [
-      { id: 'ocr', icon: ScanText, label: 'OCR' },
       { id: 'summarize', icon: MessageSquareText, label: 'Zusammenfassung' },
       { id: 'extract-tables', icon: Table2, label: 'Tabellen' },
       { id: 'extract-keyvalues', icon: KeyRound, label: 'Kennwerte' },
@@ -68,6 +71,7 @@ const categories = [
   {
     id: 'create',
     label: 'Erstellen',
+    group: 'ai',
     tabs: [
       { id: 'document-templates', icon: Plus, label: 'Vorlagen-Editor' },
       { id: 'exam-grading', icon: GraduationCap, label: 'Klausur-Korrektur' },
@@ -76,6 +80,7 @@ const categories = [
   {
     id: 'assistant',
     label: 'Assistent (Beta)',
+    group: 'ai',
     tabs: [
       { id: 'assistant-chat', icon: Sparkles, label: 'Assistent' },
     ]
@@ -205,8 +210,26 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('compress');
   const [activeCategory, setActiveCategory] = useState('basics');
+  const [activeGroup, setActiveGroup] = useState('no-ai');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const moreMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handleClickOutside = (e) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) {
+        setShowMoreMenu(false);
+      }
+    };
+    const handleEscape = (e) => { if (e.key === 'Escape') setShowMoreMenu(false); };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showMoreMenu]);
+  const [chatCollapsed, setChatCollapsed] = useState(true);
 
   const authFetch = (url, options = {}) => {
     return fetch(url, {
@@ -1047,6 +1070,12 @@ export default function App() {
     switchTab(firstTab);
   };
 
+  const switchGroup = (groupId) => {
+    setActiveGroup(groupId);
+    const firstCat = categories.find(c => c.group === groupId);
+    switchCategory(firstCat.id);
+  };
+
   if (!authToken) {
     return <LoginScreen onLogin={(token, user) => { setAuthToken(token); setCurrentUser(user); }} />;
   }
@@ -1058,7 +1087,10 @@ export default function App() {
           <div className="max-w-2xl mx-auto p-8">
 
             <div className="mb-6 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => { setActivePanel(null); setShowMoreMenu(false); switchGroup('no-ai'); }}
+                className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+              >
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center shadow-sm">
                   <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" fill="none">
                     <path d="M6 2h8l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="white" fillOpacity="0.95" />
@@ -1067,9 +1099,9 @@ export default function App() {
                   </svg>
                 </div>
                 <h1 className="text-base font-semibold text-slate-900 leading-tight">PDF Studio</h1>
-              </div>
+              </button>
 
-              <div className="relative">
+              <div className="relative" ref={moreMenuRef}>
                 {!authToken ? (
                   <button
                     onClick={() => setShowLoginScreen(true)}
@@ -1431,8 +1463,28 @@ export default function App() {
               </Modal>
             )}
 
+            <div className="flex items-center gap-1 mb-4 p-1 bg-slate-100 rounded-lg w-fit">
+              <button
+                onClick={() => switchGroup('no-ai')}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeGroup === 'no-ai' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Werkzeuge
+              </button>
+              <button
+                onClick={() => switchGroup('ai')}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  activeGroup === 'ai' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Mit KI
+              </button>
+            </div>
+
             <div className="flex gap-1 mb-3">
-              {categories.map(cat => (
+              {categories.filter(cat => cat.group === activeGroup).map(cat => (
                 <button
                   key={cat.id}
                   onClick={() => switchCategory(cat.id)}
