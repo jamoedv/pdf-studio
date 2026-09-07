@@ -77,6 +77,7 @@ async function processWatch(watch) {
 
   console.log(`Watch ${watch.id} (${watch.folderLabel}): ${newItems.length} neue Datei(en) gefunden.`);
   const processedNames = [];
+  const failedNames = [];
 
   for (const item of newItems) {
     try {
@@ -97,6 +98,7 @@ async function processWatch(watch) {
       processedNames.push(item.name);
     } catch (err) {
       console.error(`Watch ${watch.id}: Fehler bei Datei "${item.name}":`, err.message);
+      failedNames.push({ name: item.name, error: err.message });
     }
   }
 
@@ -104,6 +106,9 @@ async function processWatch(watch) {
 
   if (processedNames.length > 0) {
     await notify(watch, `${processedNames.length} neue Datei(en) aus "${watch.folderLabel}" wurden automatisch verarbeitet:\n${processedNames.map((n) => `- ${n}`).join('\n')}`);
+  }
+  if (failedNames.length > 0) {
+    await notify(watch, `⚠️ ${failedNames.length} Datei(en) aus "${watch.folderLabel}" konnten NICHT verarbeitet werden:\n${failedNames.map((f) => `- ${f.name}: ${f.error}`).join('\n')}`);
   }
 }
 

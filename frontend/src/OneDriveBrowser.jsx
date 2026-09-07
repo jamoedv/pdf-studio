@@ -157,7 +157,10 @@ export default function OneDriveBrowser({ authFetch, mode, onSelect, onSaveHere,
   // oder ein normaler Unterordner innerhalb einer bereits gewählten Bibliothek.
   const openFolder = (item) => {
     const driveId = item.isDrive ? item.driveId : (breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].driveId : item.driveId);
-    const newCrumb = [...breadcrumb, { id: item.id, name: item.name, driveId }];
+    // isDriveRoot markiert: das ist die Bibliothek selbst (item.id === driveId),
+    // nicht ein echter Unterordner darin - beim Hochladen braucht Graph dafür
+    // KEINE folderId (bedeutet "Wurzel dieses Drives"), sonst 404.
+    const newCrumb = [...breadcrumb, { id: item.id, name: item.name, driveId, isDriveRoot: !!item.isDrive }];
     setBreadcrumb(newCrumb);
     loadFolder(item.isDrive ? undefined : item.id, selectedSite?.id, driveId);
   };
@@ -166,7 +169,7 @@ export default function OneDriveBrowser({ authFetch, mode, onSelect, onSaveHere,
     const newCrumb = breadcrumb.slice(0, idx + 1);
     setBreadcrumb(newCrumb);
     const last = newCrumb[newCrumb.length - 1];
-    loadFolder(last ? last.id : undefined, selectedSite?.id, last?.driveId);
+    loadFolder(last && !last.isDriveRoot ? last.id : undefined, selectedSite?.id, last?.driveId);
   };
 
   const disconnect = async () => {
@@ -355,7 +358,7 @@ export default function OneDriveBrowser({ authFetch, mode, onSelect, onSaveHere,
                         siteId: source === 'sharepoint' ? selectedSite?.id : undefined,
                         siteLabel: source === 'sharepoint' ? selectedSite?.name : undefined,
                         driveId: source === 'sharepoint' ? (breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].driveId : undefined) : undefined,
-                        folderId: currentFolderId,
+                        folderId: (breadcrumb.length > 0 && breadcrumb[breadcrumb.length - 1].isDriveRoot) ? undefined : currentFolderId,
                         folderLabel: breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1].name : (source === 'sharepoint' ? selectedSite?.name : 'OneDrive (Wurzelverzeichnis)'),
                       })}
                       disabled={source === 'sharepoint' && breadcrumb.length === 0}
