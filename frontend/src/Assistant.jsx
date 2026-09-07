@@ -288,34 +288,44 @@ export default function Assistant({ authFetch, downloadFile }) {
           </div>
         </div>
       )}
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 bg-slate-50">
-        <Sparkles className="w-4 h-4 text-blue-900" />
-        <p className="text-sm font-medium text-slate-700">Assistent (Beta)</p>
-        <span className="text-xs text-slate-400 flex-1">— beschreib deine Aufgabe frei, lade Dateien an</span>
-        <select
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-blue-200"
-          title="Modell für diese Anfragen (zum Testen/Vergleichen)"
-        >
-          <option value="claude-haiku-4-5">Haiku 4.5 (günstig/schnell)</option>
-          <option value="claude-sonnet-4-5">Sonnet 4.5 (Standard)</option>
-          <option value="claude-sonnet-4-6">Sonnet 4.6 (neu)</option>
-        </select>
-        <button
-          onClick={resetChat}
-          className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-          title="Verlauf zurücksetzen, spart Tokens bei langen Sitzungen"
-        >
-          Neuer Chat
-        </button>
-        <button
-          onClick={openLibrary}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          Bibliothek
-        </button>
+      <div className="px-5 py-4 border-b border-slate-200 bg-white">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-blue-900 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800 leading-tight">Assistent</p>
+              <p className="text-xs text-slate-400 truncate">Beschreib deine Aufgabe oder lade eine Datei hoch</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-blue-200"
+              title="Modell für diese Anfragen (zum Testen/Vergleichen)"
+            >
+              <option value="claude-haiku-4-5">Haiku 4.5 (günstig/schnell)</option>
+              <option value="claude-sonnet-4-5">Sonnet 4.5 (Standard)</option>
+              <option value="claude-sonnet-4-6">Sonnet 4.6 (neu)</option>
+            </select>
+            <button
+              onClick={resetChat}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+              title="Verlauf zurücksetzen, spart Tokens bei langen Sitzungen"
+            >
+              Neuer Chat
+            </button>
+            <button
+              onClick={openLibrary}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Bibliothek
+            </button>
+          </div>
+        </div>
       </div>
 
       {showLibrary && (
@@ -486,7 +496,7 @@ export default function Assistant({ authFetch, downloadFile }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5">
         {displayMessages.length === 0 && (
           <div className="text-center py-10">
             <Bot className="w-8 h-8 mx-auto mb-3 text-slate-300" />
@@ -583,7 +593,7 @@ export default function Assistant({ authFetch, downloadFile }) {
         </div>
       )}
 
-      <div className="p-3 border-t border-slate-100 flex items-end gap-2">
+      <div className="px-4 py-3.5 border-t border-slate-200 flex items-end gap-2.5 bg-white">
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
@@ -608,7 +618,7 @@ export default function Assistant({ authFetch, downloadFile }) {
           onKeyDown={handleKeyDown}
           placeholder="Beschreib deine Aufgabe..."
           rows={1}
-          className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+          className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none"
         />
 
         <button
