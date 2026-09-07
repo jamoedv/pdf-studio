@@ -96,16 +96,48 @@ const ONEDRIVE_TOOLS = [
       required: ['itemId', 'filename'],
     },
   },
+  {
+    name: 'sharepoint_list_sites',
+    description: 'Listet die SharePoint-Seiten auf, auf die der Nutzer Zugriff hat.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'sharepoint_browse',
+    description: 'Durchsucht eine SharePoint-Seite. Ohne driveId werden erst die Dokumentbibliotheken der Seite gezeigt (eine Seite kann mehrere haben); mit driveId (und optional folderId) werden Dateien/Ordner darin gezeigt.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        siteId: { type: 'string', description: 'id aus sharepoint_list_sites' },
+        driveId: { type: 'string', description: 'Optional: id einer Dokumentbibliothek aus einem vorherigen Aufruf' },
+        folderId: { type: 'string', description: 'Optional: id eines Unterordners' },
+      },
+      required: ['siteId'],
+    },
+  },
+  {
+    name: 'sharepoint_import_file',
+    description: 'Lädt eine Datei aus SharePoint herunter und macht sie als fileId für weitere Werkzeuge verfügbar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        driveId: { type: 'string' },
+        itemId: { type: 'string' },
+        filename: { type: 'string' },
+      },
+      required: ['driveId', 'itemId', 'filename'],
+    },
+  },
 ];
 
 // Führt die OneDrive-Werkzeuge aus - prüft zuerst, ob der Nutzer bereits verbunden
 // ist. Falls nicht, bekommt er einen normalen Anmelde-Link (denselben OAuth-Flow
 // wie im Web-Portal) statt einer Bot-Framework-eigenen Anmelde-Karte.
-const ONEDRIVE_SYSTEM_PROMPT_ADDENDUM = `Du hast zusätzlich Zugriff auf das OneDrive des Nutzers (onedrive_list_files, onedrive_import_file). Wichtig für den Umgang damit:
-- Wenn der Nutzer unspezifisch nach OneDrive-Dateien fragt (z.B. "zeig mir meine Dateien", "ich will was von OneDrive bearbeiten", ohne exakten Dateinamen) oder mehrere Dateien bearbeiten möchte: rufe zuerst onedrive_list_files auf und zeige die Ergebnisse als nummerierte, gut lesbare Liste (Name + ob Ordner). Der Nutzer kann dann per Namen oder Nummer antworten.
-- Merke dir aus der Liste, welche Nummer zu welcher itemId gehört, damit du bei "importier Nummer 3" oder "die zweite Datei" die richtige itemId für onedrive_import_file verwendest, ohne erneut zu fragen.
-- Für mehrere Dateien auf einmal: rufe onedrive_import_file für jede gewünschte Datei einzeln auf, dann verarbeite sie wie gewünscht.
-- Wenn onedrive_list_files einen Ordner zurückgibt (isFolder), kannst du mit folderId erneut aufrufen, um hineinzuschauen.`;
+const ONEDRIVE_SYSTEM_PROMPT_ADDENDUM = `Du hast zusätzlich Zugriff auf das OneDrive und SharePoint des Nutzers (onedrive_list_files, onedrive_import_file, sharepoint_list_sites, sharepoint_browse, sharepoint_import_file). Wichtig für den Umgang damit:
+- Wenn der Nutzer unspezifisch nach Dateien fragt (z.B. "zeig mir meine Dateien", "ich will was von OneDrive/SharePoint bearbeiten", ohne exakten Dateinamen) oder mehrere Dateien bearbeiten möchte: rufe zuerst das passende Lese-Werkzeug auf und zeige die Ergebnisse als nummerierte, gut lesbare Liste (Name + ob Ordner/Bibliothek). Der Nutzer kann dann per Namen oder Nummer antworten.
+- Bei SharePoint: erst sharepoint_list_sites, dann sharepoint_browse mit der gewählten siteId (ohne driveId zeigt das die Dokumentbibliotheken der Seite, meist gibt es nur "Documents" - danach mit der driveId erneut aufrufen für den Inhalt).
+- Merke dir aus einer gezeigten Liste, welche Nummer zu welcher itemId/driveId/siteId gehört, damit du bei "importier Nummer 3" die richtigen IDs verwendest, ohne erneut zu fragen.
+- Für mehrere Dateien auf einmal: rufe das jeweilige Import-Werkzeug für jede gewünschte Datei einzeln auf, dann verarbeite sie wie gewünscht.
+- Wenn ein Lese-Werkzeug einen Ordner zurückgibt (isFolder), kannst du mit folderId erneut aufrufen, um hineinzuschauen.`;
 
 function makeOneDriveExecutor(username) {
   return async (name, input) => {
@@ -128,6 +160,23 @@ function makeOneDriveExecutor(username) {
       const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
       const destPath = path.join(UPLOAD_DIR, `${uuidv4()}_${safeName}`);
       await botGraphAuth.downloadOneDriveFile(username, input.itemId, destPath);
+      return { fileId: destPath, filename: input.filename };
+    }
+
+    if (name === 'sharepoint_list_sites') {
+      const sites = await botGraphAuth.listSharePointSites(username);
+      return { sites };
+    }
+
+    if (name === 'sharepoint_browse') {
+      const items = await botGraphAuth.listSharePointFolder(username, input.siteId, input.folderId, input.driveId);
+      return { items };
+    }
+
+    if (name === 'sharepoint_import_file') {
+      const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const destPath = path.join(UPLOAD_DIR, `${uuidv4()}_${safeName}`);
+      await botGraphAuth.downloadSharePointFile(username, input.driveId, input.itemId, destPath);
       return { fileId: destPath, filename: input.filename };
     }
 

@@ -33,6 +33,18 @@ async function downloadOneDriveFile(username, itemId, destPath) {
   return graphService.downloadItem(username, { itemId }, destPath);
 }
 
+async function listSharePointSites(username) {
+  return graphService.listSharePointSites(username);
+}
+
+async function listSharePointFolder(username, siteId, folderId, driveId) {
+  return graphService.listSharePointFolder(username, siteId, folderId, driveId);
+}
+
+async function downloadSharePointFile(username, driveId, itemId, destPath) {
+  return graphService.downloadItem(username, { driveId, itemId }, destPath);
+}
+
 module.exports = {
   teamsUsername,
   isConnected,
@@ -40,4 +52,7 @@ module.exports = {
   getValidToken,
   listOneDriveRoot,
   downloadOneDriveFile,
+  listSharePointSites,
+  listSharePointFolder,
+  downloadSharePointFile,
 };
