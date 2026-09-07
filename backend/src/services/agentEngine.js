@@ -488,7 +488,19 @@ async function runAgentLoop({ history, message, fileIds, model, extraTools = [],
     finalText = 'Ich benötige noch weitere Schritte, um das abzuschließen — bitte formuliere die Anfrage ggf. genauer.';
   }
 
-  return { reply: finalText, history: messages, outputFiles, model: resolvedModel };
+  // Nur echte Endergebnisse zurückgeben: eine erzeugte Datei, deren fileId später
+  // im selben Durchlauf als Eingabe für einen weiteren Werkzeug-Aufruf verwendet
+  // wurde, war ein Zwischenschritt (z.B. "drehen" -> "Wasserzeichen" -> "komprimieren"),
+  // nicht das eigentliche Ergebnis, das der Nutzer sehen/erhalten soll.
+  const allToolInputsJson = messages
+    .filter((m) => m.role === 'assistant' && Array.isArray(m.content))
+    .flatMap((m) => m.content.filter((b) => b.type === 'tool_use'))
+    .map((b) => JSON.stringify(b.input));
+  const finalOutputFiles = outputFiles.filter(
+    (f) => !allToolInputsJson.some((inputJson) => inputJson.includes(f))
+  );
+
+  return { reply: finalText, history: messages, outputFiles: finalOutputFiles, model: resolvedModel };
 }
 
 module.exports = { runAgentLoop, TOOLS, SYSTEM_PROMPT, ALLOWED_MODELS, DEFAULT_MODEL };
