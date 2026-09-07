@@ -471,6 +471,7 @@ async function runAgentLoop({ history, message, fileIds, model, extraTools = [],
           ? await extraExecutor(block.name, block.input)
           : await executeTool(block.name, block.input, outputFiles);
       } catch (err) {
+        console.error(`Werkzeug-Fehler (${block.name}):`, err.message);
         resultContent = { error: err.message };
       }
       toolResults.push({
