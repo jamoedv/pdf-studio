@@ -78,8 +78,8 @@ app.get('/api/v1/health', (req, res) => {
 app.use('/api/v1', onedriveCallbackRoutes);
 app.use('/api', teamsBotRoutes);
 app.use('/api/v1', teamsDownloadRoutes);
-app.use('/api/v1', watchedFoldersRoutes);
 app.use('/api/v1', authRoutes);
+app.use('/api/v1', watchedFoldersRoutes);
 app.use('/api/v1', statsRoutes);
 app.use('/api/v1', complianceRoutes);
 app.use('/api/v1', templatesFillRoutes);
