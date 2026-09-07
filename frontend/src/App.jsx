@@ -243,11 +243,9 @@ export default function App() {
   const [redactUseAI, setRedactUseAI] = useState(true);
   const [redactCustomTerms, setRedactCustomTerms] = useState('');
 
-  const [showHistory, setShowHistory] = useState(false);
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState('');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
@@ -280,10 +278,13 @@ export default function App() {
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
 
-  const [activePanel, setActivePanel] = useState(null); // null | 'admin' | 'usage' | 'watchedFolders'
+  const [activePanel, setActivePanel] = useState(null); // null | 'admin' | 'usage' | 'watchedFolders' | 'history' | 'templates' | 'stats'
   const showAdmin = activePanel === 'admin';
   const showUsage = activePanel === 'usage';
   const showWatchedFolders = activePanel === 'watchedFolders';
+  const showHistory = activePanel === 'history';
+  const showTemplates = activePanel === 'templates';
+  const showStats = activePanel === 'stats';
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [newUsername, setNewUsername] = useState('');
@@ -296,7 +297,6 @@ export default function App() {
   const [newUserRole, setNewUserRole] = useState('user');
   const [adminError, setAdminError] = useState('');
 
-  const [showStats, setShowStats] = useState(false);
   const [statsData, setStatsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
@@ -337,8 +337,11 @@ export default function App() {
 
   const toggleHistory = () => {
     if (!authToken) { setShowLoginScreen(true); return; }
-    setShowHistory(prev => !prev);
-    if (!showHistory) loadHistory();
+    setActivePanel(prev => {
+      const next = prev === 'history' ? null : 'history';
+      if (next === 'history') loadHistory();
+      return next;
+    });
   };
 
   const loadTemplates = async () => {
@@ -353,8 +356,11 @@ export default function App() {
 
   const toggleTemplates = () => {
     if (!authToken) { setShowLoginScreen(true); return; }
-    setShowTemplates(prev => !prev);
-    if (!showTemplates) loadTemplates();
+    setActivePanel(prev => {
+      const next = prev === 'templates' ? null : 'templates';
+      if (next === 'templates') loadTemplates();
+      return next;
+    });
   };
 
   const saveCurrentAsTemplate = async () => {
@@ -382,7 +388,7 @@ export default function App() {
 
   const useTemplate = (template) => {
     setPendingSteps(template.steps);
-    setShowTemplates(false);
+    setActivePanel(null);
     setMessages(prev => [...prev, { role: 'assistant', text: `Vorlage "${template.name}" geladen: ${template.steps.map(s => s.action).join(' → ')}. Lad jetzt deine Datei(en) hoch.` }]);
   };
 
@@ -537,8 +543,11 @@ export default function App() {
 
   const toggleStats = () => {
     if (!authToken) { setShowLoginScreen(true); return; }
-    setShowStats(prev => !prev);
-    if (!showStats) loadStats();
+    setActivePanel(prev => {
+      const next = prev === 'stats' ? null : 'stats';
+      if (next === 'stats') loadStats();
+      return next;
+    });
   };
 
   const formatFileSize = (bytes) => {
@@ -1095,7 +1104,7 @@ export default function App() {
                       className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
                     >
                       <History className="w-4 h-4" />
-                      Verlauf
+                      History
                     </button>
                     <button
                       onClick={() => { toggleStats(); setShowMoreMenu(false); }}
@@ -1142,8 +1151,8 @@ export default function App() {
             </div>
 
             {showTemplates && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Gespeicherte Vorlagen</p>
+              <Modal title="Vorlagen" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+                <div className="p-4">
                 {templates.length === 0 ? (
                   <p className="text-sm text-slate-400">Noch keine Vorlagen gespeichert. Plane einen mehrstufigen Chat-Workflow und speichere ihn.</p>
                 ) : (
@@ -1166,18 +1175,19 @@ export default function App() {
                     ))}
                   </div>
                 )}
-              </div>
+                </div>
+              </Modal>
             )}
 
             {showHistory && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Letzte Verarbeitungen</p>
+              <Modal title="History" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+                <div className="p-4">
                 {historyLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" />Lädt...</div>
                 ) : historyEntries.length === 0 ? (
                   <p className="text-sm text-slate-400">Noch keine Verarbeitungen im Verlauf.</p>
                 ) : (
-                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  <div className="space-y-1.5 max-h-96 overflow-y-auto">
                     {historyEntries.map(entry => (
                       <div key={entry.id + entry.timestamp} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg text-xs">
                         <div className="min-w-0">
@@ -1196,16 +1206,13 @@ export default function App() {
                     ))}
                   </div>
                 )}
-              </div>
+                </div>
+              </Modal>
             )}
 
             {showStats && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <BarChart3 className="w-4 h-4 text-blue-900" />
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Nutzungs-Dashboard</p>
-                </div>
-
+              <Modal title="Dashboard" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+                <div className="p-4">
                 {statsLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" />Lädt...</div>
                 ) : !statsData ? (
@@ -1279,7 +1286,8 @@ export default function App() {
                     )}
                   </>
                 )}
-              </div>
+                </div>
+              </Modal>
             )}
 
             {showAdmin && (
