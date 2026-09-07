@@ -1,15 +1,31 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, X, Loader2, Bot, User, Download, Sparkles, BookOpen, Trash2, FileText, Workflow, ChevronDown, ChevronRight, Pencil, Plus, Check as CheckIcon, Cloud } from 'lucide-react';
 import OneDriveBrowser from './OneDriveBrowser';
 import Modal from './Modal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
-export default function Assistant({ authFetch, downloadFile }) {
+export default function Assistant({ authFetch, downloadFile, initialInstruction, onInitialInstructionUsed }) {
   const [displayMessages, setDisplayMessages] = useState([]);
   const [history, setHistory] = useState([]);
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (initialInstruction) {
+      setInput(initialInstruction);
+      if (onInitialInstructionUsed) onInitialInstructionUsed();
+      // Textfeld nach dem Setzen des vorausgefuellten Texts auf die richtige Hoehe bringen.
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+          textareaRef.current.focus();
+        }
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialInstruction]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);

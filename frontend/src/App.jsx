@@ -269,6 +269,11 @@ export default function App() {
   const [historyEntries, setHistoryEntries] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [templates, setTemplates] = useState([]);
+  const [libraryTab, setLibraryTab] = useState('workflows');
+  const [libraryWorkflows, setLibraryWorkflows] = useState([]);
+  const [libraryDocTemplates, setLibraryDocTemplates] = useState([]);
+  const [libraryLoading2, setLibraryLoading2] = useState(false);
+  const [assistantPrefill, setAssistantPrefill] = useState('');
   const [saveTemplateName, setSaveTemplateName] = useState('');
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
@@ -368,13 +373,21 @@ export default function App() {
   };
 
   const loadTemplates = async () => {
+    setLibraryLoading2(true);
     try {
-      const res = await authFetch(`${API_URL}/templates`);
-      const data = await res.json();
-      setTemplates(data);
+      const [wfRes, tplRes] = await Promise.all([
+        authFetch(`${API_URL}/workflows`),
+        authFetch(`${API_URL}/document-templates/library`),
+      ]);
+      const wfData = await wfRes.json();
+      const tplData = await tplRes.json();
+      setLibraryWorkflows(wfData.workflows || []);
+      setLibraryDocTemplates(tplData.templates || []);
     } catch (err) {
-      setTemplates([]);
+      setLibraryWorkflows([]);
+      setLibraryDocTemplates([]);
     }
+    setLibraryLoading2(false);
   };
 
   const toggleTemplates = () => {
@@ -384,6 +397,21 @@ export default function App() {
       if (next === 'templates') loadTemplates();
       return next;
     });
+  };
+
+  const useWorkflowFromLibrary = (wf) => {
+    setAssistantPrefill(`Führe den gespeicherten Workflow "${wf.name}" (id: ${wf.id}) aus.`);
+    setActivePanel(null);
+    setActiveGroup('ai');
+    setActiveCategory('assistant');
+    setActiveTab('assistant-chat');
+  };
+
+  const openTemplateEditorFromLibrary = () => {
+    setActivePanel(null);
+    setActiveGroup('ai');
+    setActiveCategory('create');
+    setActiveTab('document-templates');
   };
 
   const saveCurrentAsTemplate = async () => {
@@ -1183,29 +1211,57 @@ export default function App() {
             </div>
 
             {showTemplates && (
-              <Modal title="Vorlagen" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+              <Modal title="Bibliothek" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+                <div className="flex items-center gap-1 p-3 border-b border-slate-100">
+                  <button
+                    onClick={() => setLibraryTab('workflows')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium ${libraryTab === 'workflows' ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}
+                  >
+                    Workflows ({libraryWorkflows.length})
+                  </button>
+                  <button
+                    onClick={() => setLibraryTab('templates')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium ${libraryTab === 'templates' ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}
+                  >
+                    Vorlagen ({libraryDocTemplates.length})
+                  </button>
+                </div>
                 <div className="p-4">
-                {templates.length === 0 ? (
-                  <p className="text-sm text-slate-400">Noch keine Vorlagen gespeichert. Plane einen mehrstufigen Chat-Workflow und speichere ihn.</p>
+                {libraryLoading2 ? (
+                  <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                ) : libraryTab === 'workflows' ? (
+                  libraryWorkflows.length === 0 ? (
+                    <p className="text-sm text-slate-400">Noch keine Workflows gespeichert. Erledige eine mehrstufige Aufgabe im Assistenten und lass sie als Workflow speichern.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {libraryWorkflows.map(wf => (
+                        <div key={wf.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-700 truncate">{wf.name}</p>
+                            <p className="text-xs text-slate-400 truncate">{wf.description}</p>
+                          </div>
+                          <button onClick={() => useWorkflowFromLibrary(wf)} className="px-2.5 py-1 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950 flex-shrink-0">
+                            Im Assistenten nutzen
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )
                 ) : (
-                  <div className="space-y-2">
-                    {templates.map(t => (
-                      <div key={t.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg">
-                        <div className="min-w-0">
+                  libraryDocTemplates.length === 0 ? (
+                    <p className="text-sm text-slate-400">Noch keine Vorlagen gespeichert. Leg eine im Vorlagen-Editor an.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {libraryDocTemplates.map(t => (
+                        <div key={t.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg">
                           <p className="text-sm font-medium text-slate-700 truncate">{t.name}</p>
-                          <p className="text-xs text-slate-400">{t.steps.map(s => s.action).join(' → ')}</p>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => useTemplate(t)} className="px-2.5 py-1 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950">
-                            Nutzen
-                          </button>
-                          <button onClick={() => deleteTemplate(t.id)} className="p-1.5 hover:bg-slate-200 rounded-md">
-                            <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                          <button onClick={openTemplateEditorFromLibrary} className="px-2.5 py-1 bg-blue-900 text-white rounded-md text-xs font-medium hover:bg-blue-950 flex-shrink-0">
+                            Im Editor öffnen
                           </button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )
                 )}
                 </div>
               </Modal>
@@ -1521,7 +1577,7 @@ export default function App() {
             ) : activeTab === 'exam-grading' ? (
               <ExamGrading authFetch={authFetch} downloadFile={downloadFile} />
             ) : activeTab === 'assistant-chat' ? (
-              <Assistant authFetch={authFetch} downloadFile={downloadFile} />
+              <Assistant authFetch={authFetch} downloadFile={downloadFile} initialInstruction={assistantPrefill} onInitialInstructionUsed={() => setAssistantPrefill('')} />
             ) : (
             <>
 
