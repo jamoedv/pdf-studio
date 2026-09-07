@@ -8,6 +8,7 @@ export default function Assistant({ authFetch, downloadFile }) {
   const [displayMessages, setDisplayMessages] = useState([]);
   const [history, setHistory] = useState([]);
   const [input, setInput] = useState('');
+  const textareaRef = useRef(null);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -243,6 +244,7 @@ export default function Assistant({ authFetch, downloadFile }) {
 
     setDisplayMessages((prev) => [...prev, { role: 'user', text: userText, files: attachedFiles }]);
     setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setPendingFiles([]);
     setSending(true);
     setError('');
@@ -613,12 +615,19 @@ export default function Assistant({ authFetch, downloadFile }) {
         </button>
 
         <textarea
+          ref={textareaRef}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            const el = e.target;
+            el.style.height = 'auto';
+            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+          }}
           onKeyDown={handleKeyDown}
           placeholder="Beschreib deine Aufgabe..."
           rows={1}
-          className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+          className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none overflow-y-auto"
+          style={{ maxHeight: '200px' }}
         />
 
         <button

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff, LogOut, User, Users, Shield, BarChart3, ClipboardCheck, Plus, GraduationCap, DollarSign, Pencil, FolderCog } from 'lucide-react';
 import WatchedFolders from './WatchedFolders';
+import Modal from './Modal';
 import TemplateEditor from './TemplateEditor';
 import ExamGrading from './ExamGrading';
 import Assistant from './Assistant';
@@ -279,9 +280,10 @@ export default function App() {
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
 
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [showUsage, setShowUsage] = useState(false);
-  const [showWatchedFolders, setShowWatchedFolders] = useState(false);
+  const [activePanel, setActivePanel] = useState(null); // null | 'admin' | 'usage' | 'watchedFolders'
+  const showAdmin = activePanel === 'admin';
+  const showUsage = activePanel === 'usage';
+  const showWatchedFolders = activePanel === 'watchedFolders';
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [newUsername, setNewUsername] = useState('');
@@ -410,16 +412,19 @@ export default function App() {
   };
 
   const toggleAdmin = () => {
-    setShowAdmin(prev => !prev);
-    if (!showAdmin) loadAdminUsers();
+    setActivePanel(prev => {
+      const next = prev === 'admin' ? null : 'admin';
+      if (next === 'admin') loadAdminUsers();
+      return next;
+    });
   };
 
   const toggleUsage = () => {
-    setShowUsage(prev => !prev);
+    setActivePanel(prev => prev === 'usage' ? null : 'usage');
   };
 
   const toggleWatchedFolders = () => {
-    setShowWatchedFolders(prev => !prev);
+    setActivePanel(prev => prev === 'watchedFolders' ? null : 'watchedFolders');
   };
 
   const changeUserRole = async (username, role) => {
@@ -1278,12 +1283,8 @@ export default function App() {
             )}
 
             {showAdmin && (
-              <div className="mb-4 bg-white border border-slate-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Shield className="w-4 h-4 text-blue-900" />
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Nutzerverwaltung</p>
-                </div>
-
+              <Modal title="Nutzerverwaltung" onClose={() => setActivePanel(null)} maxWidth="max-w-3xl">
+                <div className="p-4">
                 {adminError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 mb-3 flex items-center gap-2">
                     <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
@@ -1407,18 +1408,19 @@ export default function App() {
                   </div>
                 )}
               </div>
+              </Modal>
             )}
 
             {showUsage && (
-              <div className="mb-4">
+              <Modal title="Nutzung & Kosten" onClose={() => setActivePanel(null)} maxWidth="max-w-4xl">
                 <UsageReport authFetch={authFetch} />
-              </div>
+              </Modal>
             )}
 
             {showWatchedFolders && (
-              <div className="mb-4">
+              <Modal title="Ordner-Überwachung" onClose={() => setActivePanel(null)} maxWidth="max-w-3xl">
                 <WatchedFolders authFetch={authFetch} />
-              </div>
+              </Modal>
             )}
 
             <div className="flex gap-1 mb-3">

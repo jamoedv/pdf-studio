@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Folder, Cloud, Building2, Mail, MessageSquare, Trash2, Plus, X, Loader2, ArrowRight } from 'lucide-react';
+import { Folder, Cloud, Building2, Mail, MessageSquare, Trash2, Plus, X, Loader2, ArrowRight, Pencil } from 'lucide-react';
 import OneDriveBrowser from './OneDriveBrowser';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
@@ -21,6 +21,7 @@ export default function WatchedFolders({ authFetch }) {
   const [saving, setSaving] = useState(false);
   const [savedWorkflows, setSavedWorkflows] = useState([]);
   const [savedTemplates, setSavedTemplates] = useState([]);
+  const [editingId, setEditingId] = useState(null);
 
   const loadWatches = useCallback(async () => {
     setLoading(true);
@@ -68,9 +69,32 @@ export default function WatchedFolders({ authFetch }) {
     setNotifyEmail('');
     setNotifyTeamsUserId('');
     setShowNewForm(false);
+    setEditingId(null);
   };
 
-  const createWatch = async () => {
+  const openEditForm = (watch) => {
+    setInstruction(watch.instruction);
+    setSourceFolder({
+      source: watch.source,
+      siteId: watch.siteId,
+      driveId: watch.driveId,
+      folderId: watch.folderId,
+      folderLabel: watch.folderLabel,
+    });
+    setDestFolder(watch.destination ? {
+      source: watch.destination.source,
+      siteId: watch.destination.siteId,
+      driveId: watch.destination.driveId,
+      folderId: watch.destination.folderId,
+      folderLabel: watch.destination.folderLabel,
+    } : null);
+    setNotifyEmail(watch.notifyEmail || '');
+    setNotifyTeamsUserId(watch.notifyTeamsUserId || '');
+    setEditingId(watch.id);
+    setShowNewForm(true);
+  };
+
+  const saveWatch = async () => {
     if (!sourceFolder || !instruction.trim()) {
       setError('Bitte Quell-Ordner wählen und eine Anweisung eingeben.');
       return;
@@ -78,27 +102,36 @@ export default function WatchedFolders({ authFetch }) {
     setSaving(true);
     setError('');
     try {
-      const res = await authFetch(`${API_URL}/watched-folders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source: sourceFolder.source,
-          siteId: sourceFolder.siteId,
-          driveId: sourceFolder.driveId,
-          folderId: sourceFolder.folderId,
-          folderLabel: sourceFolder.folderLabel,
-          instruction: instruction.trim(),
-          destination: destFolder ? {
-            source: destFolder.source,
-            siteId: destFolder.siteId,
-            driveId: destFolder.driveId,
-            folderId: destFolder.folderId,
-            folderLabel: destFolder.folderLabel,
-          } : null,
-          notifyEmail: notifyEmail.trim() || null,
-          notifyTeamsUserId: notifyTeamsUserId || null,
-        }),
-      });
+      const payload = {
+        source: sourceFolder.source,
+        siteId: sourceFolder.siteId,
+        driveId: sourceFolder.driveId,
+        folderId: sourceFolder.folderId,
+        folderLabel: sourceFolder.folderLabel,
+        instruction: instruction.trim(),
+        destination: destFolder ? {
+          source: destFolder.source,
+          siteId: destFolder.siteId,
+          driveId: destFolder.driveId,
+          folderId: destFolder.folderId,
+          folderLabel: destFolder.folderLabel,
+        } : null,
+        notifyEmail: notifyEmail.trim() || null,
+        notifyTeamsUserId: notifyTeamsUserId || null,
+      };
+
+      const res = editingId
+        ? await authFetch(`${API_URL}/watched-folders/${editingId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await authFetch(`${API_URL}/watched-folders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Fehler beim Speichern');
       resetForm();
@@ -135,14 +168,11 @@ export default function WatchedFolders({ authFetch }) {
   return (
     <div className="max-w-3xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">Automatische Ordner-Überwachung</h2>
-          <p className="text-sm text-slate-500 mt-1">Neue Dateien in einem OneDrive/SharePoint-Ordner werden automatisch verarbeitet — ganz ohne Chat-Nachricht.</p>
-        </div>
+        <p className="text-sm text-slate-500">Neue Dateien in einem OneDrive/SharePoint-Ordner werden automatisch verarbeitet — ganz ohne Chat-Nachricht.</p>
         {!showNewForm && (
           <button
             onClick={() => setShowNewForm(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950"
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 flex-shrink-0"
           >
             <Plus className="w-4 h-4" /> Neue Überwachung
           </button>
@@ -273,11 +303,11 @@ export default function WatchedFolders({ authFetch }) {
 
           <div className="flex gap-2 pt-2">
             <button
-              onClick={createWatch}
+              onClick={saveWatch}
               disabled={saving}
               className="px-4 py-2 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 disabled:opacity-50"
             >
-              {saving ? 'Speichere...' : 'Überwachung starten'}
+              {saving ? 'Speichere...' : editingId ? 'Änderungen speichern' : 'Überwachung starten'}
             </button>
             <button onClick={resetForm} className="px-4 py-2 text-slate-500 text-sm hover:text-slate-700">
               Abbrechen
@@ -304,6 +334,9 @@ export default function WatchedFolders({ authFetch }) {
                 className={`px-2 py-1 rounded-md text-xs font-medium flex-shrink-0 ${watch.active ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-400'}`}
               >
                 {watch.active ? 'Aktiv' : 'Pausiert'}
+              </button>
+              <button onClick={() => openEditForm(watch)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
+                <Pencil className="w-4 h-4" />
               </button>
               <button onClick={() => deleteWatch(watch.id)} className="text-slate-400 hover:text-red-600 flex-shrink-0">
                 <Trash2 className="w-4 h-4" />
