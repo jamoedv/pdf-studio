@@ -101,6 +101,12 @@ const ONEDRIVE_TOOLS = [
 // Führt die OneDrive-Werkzeuge aus - prüft zuerst, ob der Nutzer bereits verbunden
 // ist. Falls nicht, bekommt er einen normalen Anmelde-Link (denselben OAuth-Flow
 // wie im Web-Portal) statt einer Bot-Framework-eigenen Anmelde-Karte.
+const ONEDRIVE_SYSTEM_PROMPT_ADDENDUM = `Du hast zusätzlich Zugriff auf das OneDrive des Nutzers (onedrive_list_files, onedrive_import_file). Wichtig für den Umgang damit:
+- Wenn der Nutzer unspezifisch nach OneDrive-Dateien fragt (z.B. "zeig mir meine Dateien", "ich will was von OneDrive bearbeiten", ohne exakten Dateinamen) oder mehrere Dateien bearbeiten möchte: rufe zuerst onedrive_list_files auf und zeige die Ergebnisse als nummerierte, gut lesbare Liste (Name + ob Ordner). Der Nutzer kann dann per Namen oder Nummer antworten.
+- Merke dir aus der Liste, welche Nummer zu welcher itemId gehört, damit du bei "importier Nummer 3" oder "die zweite Datei" die richtige itemId für onedrive_import_file verwendest, ohne erneut zu fragen.
+- Für mehrere Dateien auf einmal: rufe onedrive_import_file für jede gewünschte Datei einzeln auf, dann verarbeite sie wie gewünscht.
+- Wenn onedrive_list_files einen Ordner zurückgibt (isFolder), kannst du mit folderId erneut aufrufen, um hineinzuschauen.`;
+
 function makeOneDriveExecutor(username) {
   return async (name, input) => {
     if (!botGraphAuth.isConnected(username)) {
@@ -181,6 +187,7 @@ class PdfStudioTeamsBot extends ActivityHandler {
             fileIds,
             extraTools: ONEDRIVE_TOOLS,
             extraExecutor: oneDriveExecutor,
+            extraSystemPrompt: ONEDRIVE_SYSTEM_PROMPT_ADDENDUM,
           })
         );
 

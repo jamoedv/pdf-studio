@@ -428,9 +428,10 @@ function sanitizeHistory(history) {
 // egal über welchen Kanal der Nutzer damit spricht.
 // extraTools/extraExecutor erlauben kanalspezifische Zusatz-Werkzeuge (z.B. OneDrive-Zugriff
 // nur im Teams-Bot, über dessen eigenes OAuth), ohne die Werkzeugliste des Web-Portals zu ändern.
-async function runAgentLoop({ history, message, fileIds, model, extraTools = [], extraExecutor = null }) {
+async function runAgentLoop({ history, message, fileIds, model, extraTools = [], extraExecutor = null, extraSystemPrompt = '' }) {
   const resolvedModel = ALLOWED_MODELS[model] || ALLOWED_MODELS[DEFAULT_MODEL];
   const allTools = extraTools.length > 0 ? [...TOOLS, ...extraTools] : TOOLS;
+  const systemPrompt = extraSystemPrompt ? `${SYSTEM_PROMPT}\n\n${extraSystemPrompt}` : SYSTEM_PROMPT;
 
   let userContent = message;
   if (fileIds && fileIds.length > 0) {
@@ -447,7 +448,7 @@ async function runAgentLoop({ history, message, fileIds, model, extraTools = [],
     const response = await anthropicClient.createMessage({
       model: resolvedModel,
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools: allTools,
       cache_control: { type: 'ephemeral' },
       messages,
