@@ -19,6 +19,8 @@ export default function WatchedFolders({ authFetch }) {
   const [notifyTeamsUserId, setNotifyTeamsUserId] = useState('');
   const [pickerMode, setPickerMode] = useState(null); // 'source' | 'destination' | null
   const [saving, setSaving] = useState(false);
+  const [savedWorkflows, setSavedWorkflows] = useState([]);
+  const [savedTemplates, setSavedTemplates] = useState([]);
 
   const loadWatches = useCallback(async () => {
     setLoading(true);
@@ -42,7 +44,22 @@ export default function WatchedFolders({ authFetch }) {
     }
   }, [authFetch]);
 
-  useEffect(() => { loadWatches(); loadTeamsContacts(); }, [loadWatches, loadTeamsContacts]);
+  const loadLibrary = useCallback(async () => {
+    try {
+      const [wfRes, tplRes] = await Promise.all([
+        authFetch(`${API_URL}/workflows`),
+        authFetch(`${API_URL}/document-templates/library`),
+      ]);
+      const wfData = await wfRes.json();
+      const tplData = await tplRes.json();
+      setSavedWorkflows(wfData.workflows || []);
+      setSavedTemplates(tplData.templates || []);
+    } catch {
+      // Nicht kritisch - Bibliotheks-Auswahl bleibt dann einfach leer
+    }
+  }, [authFetch]);
+
+  useEffect(() => { loadWatches(); loadTeamsContacts(); loadLibrary(); }, [loadWatches, loadTeamsContacts, loadLibrary]);
 
   const resetForm = () => {
     setInstruction('');
@@ -156,6 +173,44 @@ export default function WatchedFolders({ authFetch }) {
 
           <div>
             <label className="text-xs font-medium text-slate-500 mb-1.5 block">2. Was soll mit neuen Dateien passieren?</label>
+
+            {(savedWorkflows.length > 0 || savedTemplates.length > 0) && (
+              <div className="flex gap-2 mb-2">
+                {savedWorkflows.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      const wf = savedWorkflows.find((w) => w.id === e.target.value);
+                      if (wf) setInstruction(`Führe den gespeicherten Workflow "${wf.name}" (id: ${wf.id}) mit dieser Datei aus.`);
+                      e.target.value = '';
+                    }}
+                    defaultValue=""
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="" disabled>Aus Workflow-Bibliothek übernehmen...</option>
+                    {savedWorkflows.map((wf) => (
+                      <option key={wf.id} value={wf.id}>{wf.name}</option>
+                    ))}
+                  </select>
+                )}
+                {savedTemplates.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      const tpl = savedTemplates.find((t) => t.id === e.target.value);
+                      if (tpl) setInstruction(`Fülle die gespeicherte Vorlage "${tpl.name}" (id: ${tpl.id}) mit den Daten aus dieser Datei und erzeuge ein PDF.`);
+                      e.target.value = '';
+                    }}
+                    defaultValue=""
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="" disabled>Aus Vorlagen-Bibliothek übernehmen...</option>
+                    {savedTemplates.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             <textarea
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
@@ -163,6 +218,7 @@ export default function WatchedFolders({ authFetch }) {
               rows={3}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none"
             />
+            <p className="text-xs text-slate-400 mt-1">Noch keinen passenden Workflow? Erledige die Aufgabe einmal im Assistenten und lass sie dort als Workflow speichern — danach steht sie hier zur Auswahl.</p>
           </div>
 
           <div>
