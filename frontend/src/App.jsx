@@ -3,6 +3,7 @@ import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loa
 import WatchedFolders from './WatchedFolders';
 import Modal from './Modal';
 import DocmaiticLogo from './DocmaiticLogo';
+import Sidebar from './Sidebar';
 import TemplateEditor from './TemplateEditor';
 import ExamGrading from './ExamGrading';
 import Assistant from './Assistant';
@@ -301,6 +302,16 @@ export default function App() {
   const [selectedBatchFiles, setSelectedBatchFiles] = useState({});
 
   const [activePanel, setActivePanel] = useState(null); // null | 'admin' | 'usage' | 'watchedFolders' | 'history' | 'templates' | 'stats'
+
+  // Laedt die noetigen Daten automatisch nach, sobald ein Panel ueber die
+  // Seitenleiste geoeffnet wird - unabhaengig davon, WO activePanel gesetzt wird.
+  useEffect(() => {
+    if (activePanel === 'admin') loadAdminUsers();
+    else if (activePanel === 'stats') loadStats();
+    else if (activePanel === 'templates') loadTemplates();
+    else if (activePanel === 'history') loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePanel]);
   const showAdmin = activePanel === 'admin';
   const showUsage = activePanel === 'usage';
   const showWatchedFolders = activePanel === 'watchedFolders';
@@ -1105,89 +1116,47 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="flex h-screen">
+        <Sidebar
+          categories={categories}
+          activeGroup={activeGroup}
+          activeCategory={activeCategory}
+          activeTab={activeTab}
+          activePanel={activePanel}
+          currentUser={currentUser}
+          switchGroup={switchGroup}
+          switchTab={switchTab}
+          setActivePanel={setActivePanel}
+          setShowMoreMenu={setShowMoreMenu}
+        />
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto p-8">
+          <div className="max-w-4xl mx-auto p-8">
 
             <div className="mb-6 flex items-center justify-between">
-              <button
-                onClick={() => { setActivePanel(null); setShowMoreMenu(false); switchGroup('no-ai'); }}
-                className="hover:opacity-80 transition-opacity"
-              >
-                <DocmaiticLogo size={18} />
-              </button>
+              <h1 className="text-lg font-semibold text-slate-900">
+                {activePanel === 'templates' ? 'Bibliothek'
+                  : activePanel === 'history' ? 'History'
+                  : activePanel === 'stats' ? 'Dashboard'
+                  : activePanel === 'admin' ? 'Nutzerverwaltung'
+                  : activePanel === 'usage' ? 'Nutzung & Kosten'
+                  : activePanel === 'watchedFolders' ? 'Ordner-Überwachung'
+                  : categories.find(c => c.id === activeCategory)?.tabs.find(t => t.id === activeTab)?.label}
+              </h1>
 
               <div className="relative" ref={moreMenuRef}>
-                {!authToken ? (
-                  <button
-                    onClick={() => setShowLoginScreen(true)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 transition-colors"
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    Anmelden
-                  </button>
-                ) : (
                 <button
                   onClick={() => setShowMoreMenu(prev => !prev)}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
                 >
-                  <MoreHorizontal className="w-4.5 h-4.5" />
+                  <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center">
+                    <User className="w-3.5 h-3.5 text-slate-500" />
+                  </div>
+                  <span className="text-sm">{currentUser?.username}</span>
                 </button>
-                )}
-                {showMoreMenu && authToken && (
-                  <div className="absolute right-0 top-10 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-20">
-                    <div className="px-3.5 py-2 border-b border-slate-100 flex items-center gap-2">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-xs text-slate-500 truncate">{currentUser?.username}</span>
-                    </div>
-                    <button
-                      onClick={() => { toggleTemplates(); setShowMoreMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      <Bookmark className="w-4 h-4" />
-                      Vorlagen
-                    </button>
-                    <button
-                      onClick={() => { toggleHistory(); setShowMoreMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      <History className="w-4 h-4" />
-                      History
-                    </button>
-                    <button
-                      onClick={() => { toggleStats(); setShowMoreMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      <BarChart3 className="w-4 h-4" />
-                      Dashboard
-                    </button>
-                    {currentUser?.role === 'admin' && (
-                      <button
-                        onClick={() => { toggleAdmin(); setShowMoreMenu(false); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                      >
-                        <Users className="w-4 h-4" />
-                        Nutzerverwaltung
-                      </button>
-                    )}
-                    {currentUser?.role === 'admin' && (
-                      <button
-                        onClick={() => { toggleUsage(); setShowMoreMenu(false); }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                      >
-                        <DollarSign className="w-4 h-4" />
-                        Nutzung & Kosten
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { toggleWatchedFolders(); setShowMoreMenu(false); }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      <FolderCog className="w-4 h-4" />
-                      Ordner-Überwachung
-                    </button>
+                {showMoreMenu && (
+                  <div className="absolute right-0 top-10 w-44 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-20">
                     <button
                       onClick={logout}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-slate-100"
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                     >
                       <LogOut className="w-4 h-4" />
                       Abmelden
@@ -1198,7 +1167,7 @@ export default function App() {
             </div>
 
             {showTemplates && (
-              <Modal title="Bibliothek" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+              <div className="max-w-2xl bg-white border border-slate-200 rounded-xl p-5">
                 <div className="flex items-center gap-1 p-3 border-b border-slate-100">
                   <button
                     onClick={() => setLibraryTab('workflows')}
@@ -1251,11 +1220,11 @@ export default function App() {
                   )
                 )}
                 </div>
-              </Modal>
+              </div>
             )}
 
             {showHistory && (
-              <Modal title="History" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+              <div className="max-w-2xl bg-white border border-slate-200 rounded-xl p-5">
                 <div className="p-4">
                 {historyLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" />Lädt...</div>
@@ -1282,11 +1251,11 @@ export default function App() {
                   </div>
                 )}
                 </div>
-              </Modal>
+              </div>
             )}
 
             {showStats && (
-              <Modal title="Dashboard" onClose={() => setActivePanel(null)} maxWidth="max-w-2xl">
+              <div className="max-w-2xl bg-white border border-slate-200 rounded-xl p-5">
                 <div className="p-4">
                 {statsLoading ? (
                   <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="w-4 h-4 animate-spin" />Lädt...</div>
@@ -1362,11 +1331,11 @@ export default function App() {
                   </>
                 )}
                 </div>
-              </Modal>
+              </div>
             )}
 
             {showAdmin && (
-              <Modal title="Nutzerverwaltung" onClose={() => setActivePanel(null)} maxWidth="max-w-3xl">
+              <div className="max-w-3xl bg-white border border-slate-200 rounded-xl p-5">
                 <div className="p-4">
                 {adminError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 mb-3 flex items-center gap-2">
@@ -1491,74 +1460,23 @@ export default function App() {
                   </div>
                 )}
               </div>
-              </Modal>
+              </div>
             )}
 
             {showUsage && (
-              <Modal title="Nutzung & Kosten" onClose={() => setActivePanel(null)} maxWidth="max-w-4xl">
+              <div className="max-w-4xl bg-white border border-slate-200 rounded-xl p-5">
                 <UsageReport authFetch={authFetch} />
-              </Modal>
+              </div>
             )}
 
             {showWatchedFolders && (
-              <Modal title="Ordner-Überwachung" onClose={() => setActivePanel(null)} maxWidth="max-w-3xl">
+              <div className="max-w-3xl bg-white border border-slate-200 rounded-xl p-5">
                 <WatchedFolders authFetch={authFetch} />
-              </Modal>
+              </div>
             )}
 
-            <div className="flex items-center gap-1 mb-4 p-1 bg-slate-100 rounded-lg w-fit">
-              <button
-                onClick={() => switchGroup('no-ai')}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  activeGroup === 'no-ai' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Werkzeuge
-              </button>
-              <button
-                onClick={() => switchGroup('ai')}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  activeGroup === 'ai' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Mit KI
-              </button>
-            </div>
-
-            <div className="flex gap-1 mb-3">
-              {categories.filter(cat => cat.group === activeGroup).map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => switchCategory(cat.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    activeCategory === cat.id ? 'bg-blue-900 text-white' : 'text-slate-500 hover:bg-slate-100'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-5 mb-6 border-b border-slate-200 flex-wrap">
-              {categories.find(c => c.id === activeCategory).tabs.map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => switchTab(tab.id)}
-                    className={`flex items-center gap-1.5 pb-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-                      isActive ? 'text-slate-900 border-blue-900' : 'text-slate-400 border-transparent hover:text-slate-600'
-                    }`}
-                  >
-                    <Icon />
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
+            {!activePanel && (
+            <>
             {activeTab === 'document-templates' ? (
               <TemplateEditor authFetch={authFetch} downloadFile={downloadFile} />
             ) : activeTab === 'exam-grading' ? (
@@ -2350,6 +2268,8 @@ export default function App() {
                   </button>
                 )}
               </div>
+            )}
+            </>
             )}
             </>
             )}
