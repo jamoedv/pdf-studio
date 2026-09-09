@@ -1,0 +1,149 @@
+/* docmaitic Theme – Tailwind v4 Override
+   Einbau: in frontend/src/index.css NACH dem Tailwind-Import:
+
+     @import "tailwindcss";
+     @import "./docmaitic-theme.css";
+
+   Die bestehenden Utility-Klassen (slate-*, blue-*, emerald-*, amber-*, red-*)
+   bleiben im Code stehen und bekommen hier neue Werte. Kein JSX-Umbau nötig. */
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+@theme {
+  /* Typografie */
+  --font-sans: "Space Grotesk", Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Neutrale (ersetzt slate/gray/zinc – warmes Greige) */
+  --color-slate-50:  #FAFAF8;
+  --color-slate-100: #F5F5F0;
+  --color-slate-200: #E6E6DF;
+  --color-slate-300: #C8C8BE;
+  --color-slate-400: #A8A8A0;
+  --color-slate-500: #8A8A82;
+  --color-slate-600: #6B6B63;
+  --color-slate-700: #4A4A44;
+  --color-slate-800: #2E2E2A;
+  --color-slate-900: #1A1A18;
+  --color-slate-950: #121210;
+
+  --color-gray-50:  #FAFAF8;
+  --color-gray-100: #F5F5F0;
+  --color-gray-200: #E6E6DF;
+  --color-gray-300: #C8C8BE;
+  --color-gray-400: #A8A8A0;
+  --color-gray-500: #8A8A82;
+  --color-gray-600: #6B6B63;
+  --color-gray-700: #4A4A44;
+  --color-gray-800: #2E2E2A;
+  --color-gray-900: #1A1A18;
+  --color-gray-950: #121210;
+
+  /* Marke: Tiefblau #12395C liegt auf 700 – bg-blue-600/700 wird zur Primärfarbe */
+  --color-blue-50:  #F0F3F6;
+  --color-blue-100: #DDE5EC;
+  --color-blue-200: #BFCEDB;
+  --color-blue-300: #97AFC4;
+  --color-blue-400: #6B8CA8;
+  --color-blue-500: #2A5075;
+  --color-blue-600: #17456C;
+  --color-blue-700: #12395C;
+  --color-blue-800: #0E2E4A;
+  --color-blue-900: #0B2540;
+  --color-blue-950: #071A2E;
+
+  /* Marken-Alias für neuen Code: bg-brand, text-brand-fg … */
+  --color-brand:      #12395C;
+  --color-brand-soft: #F0F3F6;
+  --color-brand-line: #BFCEDB;
+  --color-brand-deep: #0B2540;
+  --color-brand-mid:  #8FA3B4;
+
+  /* violet/indigo/sky in die Markenfamilie einfalten */
+  --color-violet-50:  #F0F3F6;
+  --color-violet-100: #DDE5EC;
+  --color-violet-500: #2A5075;
+  --color-violet-600: #12395C;
+  --color-violet-700: #0E2E4A;
+  --color-indigo-50:  #F0F3F6;
+  --color-indigo-500: #2A5075;
+  --color-indigo-600: #12395C;
+  --color-indigo-700: #0E2E4A;
+  --color-sky-50:  #F0F3F6;
+  --color-sky-500: #2A5075;
+  --color-sky-600: #12395C;
+
+  /* Erfolg – entsättigtes Grün */
+  --color-emerald-50:  #EAF0E9;
+  --color-emerald-100: #D8E4D7;
+  --color-emerald-200: #C0D2BF;
+  --color-emerald-500: #4A7A50;
+  --color-emerald-600: #2E5A34;
+  --color-emerald-700: #274B2C;
+  --color-emerald-800: #1D3A22;
+  --color-green-50:  #EAF0E9;
+  --color-green-100: #D8E4D7;
+  --color-green-500: #4A7A50;
+  --color-green-600: #2E5A34;
+  --color-green-700: #274B2C;
+
+  /* Warnung – gedecktes Ocker */
+  --color-amber-50:  #F8F2E2;
+  --color-amber-100: #F3EEDF;
+  --color-amber-200: #E8DCBC;
+  --color-amber-500: #A8801F;
+  --color-amber-600: #7A5B18;
+  --color-amber-700: #6B4F15;
+  --color-yellow-50:  #F8F2E2;
+  --color-yellow-500: #A8801F;
+  --color-yellow-600: #7A5B18;
+
+  /* Fehler – Terrakotta statt Signalrot */
+  --color-red-50:  #F7E9E5;
+  --color-red-100: #F0D8D2;
+  --color-red-200: #E3BDB4;
+  --color-red-300: #D9BEB8;
+  --color-red-500: #B0503B;
+  --color-red-600: #8C3A2B;
+  --color-red-700: #6E2E22;
+  --color-red-800: #57241B;
+  --color-rose-50:  #F7E9E5;
+  --color-rose-100: #F0D8D2;
+  --color-rose-500: #B0503B;
+  --color-rose-600: #8C3A2B;
+  --color-rose-700: #6E2E22;
+
+  /* Radien – flacher und technischer als die Tailwind-Defaults */
+  --radius-sm:  3px;
+  --radius-md:  5px;
+  --radius-lg:  6px;
+  --radius-xl:  8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 14px;
+
+  /* Schatten – niedriger Kontrast, warmer Ton */
+  --shadow-sm:  0 1px 2px rgba(26, 26, 24, 0.05);
+  --shadow-md:  0 4px 12px rgba(26, 26, 24, 0.06);
+  --shadow-lg:  0 8px 24px rgba(26, 26, 24, 0.07);
+  --shadow-xl:  0 12px 32px rgba(26, 26, 24, 0.08);
+  --shadow-2xl: 0 20px 48px rgba(26, 26, 24, 0.10);
+}
+
+/* Grundlagen */
+body {
+  background: #FAFAF8;
+  color: #1A1A18;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabellenzahlen, IDs, Dateinamen tabellarisch ausrichten */
+.tabular, td.num, .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fokusring in Markenfarbe, statt Browser-Default */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #12395C;
+  outline-offset: 2px;
+}

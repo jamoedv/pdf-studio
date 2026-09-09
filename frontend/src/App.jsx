@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, Scissors, Image as ImageIcon, Download, X, Check, Loader2, Send, Sparkles, AlertCircle, RotateCw, Stamp, Lock, ArrowUp, ArrowDown, Tag, History, Bookmark, Trash2, ScanText, Table2, KeyRound, GitCompare, BookMarked, MoreHorizontal, PanelRightClose, PanelRightOpen, MessageSquareText, ShieldOff, LogOut, User, Users, Shield, BarChart3, ClipboardCheck, Plus, GraduationCap, DollarSign, Pencil, FolderCog } from 'lucide-react';
 import WatchedFolders from './WatchedFolders';
 import Modal from './Modal';
+import DocmaiticLogo from './DocmaiticLogo';
 import TemplateEditor from './TemplateEditor';
 import ExamGrading from './ExamGrading';
 import Assistant from './Assistant';
@@ -128,17 +129,10 @@ function LoginScreen({ onLogin, onCancel }) {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-2.5 mb-8 justify-center">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center shadow-sm">
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none">
-              <path d="M6 2h8l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="white" fillOpacity="0.95" />
-              <path d="M14 2v5h5" fill="none" stroke="#1e3a8a" strokeWidth="1.2" strokeLinejoin="round" />
-              <path d="M8.5 13l2.3 2.3L15.5 10.5" stroke="#1e3a8a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <h1 className="text-lg font-semibold text-slate-900">PDF Studio</h1>
+          <DocmaiticLogo size={22} />
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-6">
+        <div className="bg-white border border-slate-200 rounded-xl p-6">
           <div className="flex items-center justify-between mb-5">
             <div className="flex gap-1 p-1 bg-slate-100 rounded-lg flex-1">
               <button
@@ -1117,16 +1111,9 @@ export default function App() {
             <div className="mb-6 flex items-center justify-between">
               <button
                 onClick={() => { setActivePanel(null); setShowMoreMenu(false); switchGroup('no-ai'); }}
-                className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+                className="hover:opacity-80 transition-opacity"
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center shadow-sm">
-                  <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" fill="none">
-                    <path d="M6 2h8l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z" fill="white" fillOpacity="0.95" />
-                    <path d="M14 2v5h5" fill="none" stroke="#1e3a8a" strokeWidth="1.2" strokeLinejoin="round" />
-                    <path d="M8.5 13l2.3 2.3L15.5 10.5" stroke="#1e3a8a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <h1 className="text-base font-semibold text-slate-900 leading-tight">PDF Studio</h1>
+                <DocmaiticLogo size={18} />
               </button>
 
               <div className="relative" ref={moreMenuRef}>
