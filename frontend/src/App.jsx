@@ -1082,6 +1082,7 @@ export default function App() {
   };
 
   const switchTab = (tabId) => {
+    setActivePanel(null);
     setActiveTab(tabId);
     setActiveCategory(findCategoryForTab(tabId));
     setFiles([]);
