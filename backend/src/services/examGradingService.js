@@ -2,7 +2,15 @@ const fs = require('fs').promises;
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
+const sharp = require('sharp');
 const execPromise = util.promisify(exec);
+
+// Anthropics Grenze für MEHRERE Bilder in einer Anfrage liegt bei 2000px je Kante
+// (compare_documents schickt immer mehrere Bilder auf einmal). 200 DPI erzeugt bei
+// einer A4-Seite bereits ~2338px Höhe - das reicht schon aus, um die Grenze zu
+// reißen. 1568px ist zusätzlich Anthropics eigene Qualitäts-Empfehlung (mehr bringt
+// laut deren Dokumentation keine bessere Erkennung, nur mehr Tokens).
+const MAX_IMAGE_DIMENSION = 1568;
 
 function parseClaudeJSON(text) {
   const cleaned = text.replace(/```json\s*|```\s*/g, '').trim();
@@ -15,6 +23,9 @@ function parseClaudeJSON(text) {
 class ExamGradingService {
   // Rendert ein PDF als Serie von Bildern (Base64-JPEG) für die visuelle KI-Analyse
   // - notwendig für gescannte/handschriftliche Bögen, da hier reine Textextraktion nicht funktioniert.
+  // Verkleinert jede Seite automatisch, falls sie Anthropics Bildgrößen-Grenze
+  // überschreiten würde (siehe MAX_IMAGE_DIMENSION oben) - vorher lief das bei
+  // mehrseitigen/hochauflösenden PDFs bei compare_documents in einen Fehler.
   async pdfToBase64Images(pdfPath, dpi = 200) {
     const tmpDir = path.join(path.dirname(pdfPath), `examimg_tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
     await fs.mkdir(tmpDir, { recursive: true });
@@ -23,7 +34,14 @@ class ExamGradingService {
       const files = (await fs.readdir(tmpDir)).filter((f) => f.startsWith('page')).sort();
       const images = [];
       for (const f of files) {
-        const buffer = await fs.readFile(path.join(tmpDir, f));
+        let buffer = await fs.readFile(path.join(tmpDir, f));
+        const meta = await sharp(buffer).metadata();
+        if ((meta.width || 0) > MAX_IMAGE_DIMENSION || (meta.height || 0) > MAX_IMAGE_DIMENSION) {
+          buffer = await sharp(buffer)
+            .resize({ width: MAX_IMAGE_DIMENSION, height: MAX_IMAGE_DIMENSION, fit: 'inside' })
+            .jpeg({ quality: 90 })
+            .toBuffer();
+        }
         images.push(buffer.toString('base64'));
       }
       return images;

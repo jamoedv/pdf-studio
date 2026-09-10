@@ -42,6 +42,16 @@ function ToolNode({ data }) {
       </div>
       <p className="text-xs text-slate-400 truncate">{data.isInstruction ? (data.instruction || 'Freie Anweisung...') : data.toolName}</p>
 
+      {fileHandles.length > 1 && (
+        <div className="mt-1.5 pt-1.5 border-t border-slate-100 space-y-0.5">
+          {fileHandles.map((h) => (
+            <p key={h} className="text-[10px] text-slate-400 truncate">
+              <span className="font-medium text-slate-500">{data.fieldLabels?.[h] || h}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
       {fileHandles.length <= 1 ? (
         <Handle type="target" position={Position.Left} />
       ) : (
@@ -52,6 +62,7 @@ function ToolNode({ data }) {
             position={Position.Left}
             id={h}
             style={{ top: `${((i + 1) / (fileHandles.length + 1)) * 100}%` }}
+            title={data.fieldLabels?.[h] || h}
           />
         ))
       )}
@@ -80,6 +91,8 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   const [running, setRunning] = useState(false);
   const [testReply, setTestReply] = useState('');
   const [testOutputFiles, setTestOutputFiles] = useState([]);
+  const [testHistory, setTestHistory] = useState([]);
+  const [testAnswer, setTestAnswer] = useState('');
 
   const initialGraph = existingWorkflow?.config?.editorGraph;
   const [nodes, setNodes, onNodesChange] = useNodesState(
@@ -101,6 +114,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
       isInstruction: !n.tool,
       instruction: n.instruction,
       params: n.params || {},
+      fieldLabels: n.fieldLabels || {},
     };
   }
 
@@ -186,6 +200,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
       title: n.data.title,
       tool: n.data.isInstruction ? undefined : n.data.toolName,
       params: n.data.isInstruction ? undefined : n.data.params,
+      fieldLabels: n.data.isInstruction ? undefined : n.data.fieldLabels,
       instruction: n.data.isInstruction ? n.data.instruction : undefined,
       position: n.position,
     })),
@@ -231,26 +246,36 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   const uploadSlots = getUploadSlots(currentGraphPayload.nodes, currentGraphPayload.edges);
   const canTestRun = uploadSlots ? uploadSlots.every((s) => slotFiles[s.key]) : pendingFiles.length > 0;
 
-  const testRun = async () => {
+  const testRun = async (continuationMessage) => {
     setRunning(true);
     setError('');
-    setTestReply('');
-    setTestOutputFiles([]);
+    if (!continuationMessage) {
+      setTestReply('');
+      setTestOutputFiles([]);
+    }
     try {
       const payload = toGraphPayload();
-      const fileIds = uploadSlots ? uploadSlots.map((s) => slotFiles[s.key]) : pendingFiles;
+      const fileIds = continuationMessage ? [] : (uploadSlots ? uploadSlots.map((s) => slotFiles[s.key]) : pendingFiles);
       const uploadAssignments = uploadSlots
         ? Object.fromEntries(uploadSlots.map((s) => [s.key, slotFiles[s.key]?.filename]))
         : undefined;
       const res = await authFetch(`${API_URL}/workflow-editor/test-run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, fileIds, uploadAssignments }),
+        body: JSON.stringify({
+          ...payload,
+          fileIds,
+          uploadAssignments,
+          history: continuationMessage ? testHistory : [],
+          message: continuationMessage || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setTestReply(data.reply);
       setTestOutputFiles(data.outputFiles || []);
+      setTestHistory(data.history || []);
+      setTestAnswer('');
     } catch (err) {
       setError(err.message);
     }
@@ -446,7 +471,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
           </>
         )}
         <button
-          onClick={testRun} disabled={!canTestRun || running}
+          onClick={() => testRun()} disabled={!canTestRun || running}
           className="w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-40 flex items-center justify-center gap-2"
         >
           {running ? <><Loader2 className="w-4 h-4 animate-spin" />Läuft...</> : <><Play className="w-4 h-4" />Testen</>}
@@ -466,6 +491,24 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
                 })}
               </div>
             )}
+            {testOutputFiles.length === 0 && (
+              <div className="mt-2.5 flex gap-2">
+                <input
+                  value={testAnswer}
+                  onChange={(e) => setTestAnswer(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && testAnswer.trim() && testRun(testAnswer)}
+                  placeholder="Antwort..."
+                  className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <button
+                  onClick={() => testRun(testAnswer)}
+                  disabled={!testAnswer.trim() || running}
+                  className="px-3 py-1.5 bg-slate-900 text-white rounded-md text-xs font-medium hover:bg-slate-800 disabled:opacity-40"
+                >
+                  {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Senden'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -482,9 +525,9 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
 }
 
 function NodeConfigPanel({ data, templates, onChange, onDelete, onClose }) {
-  const configurableProps = data.tool
-    ? Object.entries(data.tool.input_schema.properties || {}).filter(([key]) => !FILE_REF_FIELDS.has(key))
-    : [];
+  const allProps = data.tool ? Object.entries(data.tool.input_schema.properties || {}) : [];
+  const fileFields = allProps.filter(([key]) => FILE_REF_FIELDS.has(key)).map(([key]) => key);
+  const configurableProps = allProps.filter(([key]) => !FILE_REF_FIELDS.has(key));
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 mb-6">
@@ -508,6 +551,25 @@ function NodeConfigPanel({ data, templates, onChange, onDelete, onClose }) {
         />
       ) : (
         <div className="space-y-2.5">
+          {fileFields.length > 1 && (
+            <div className="p-2.5 bg-amber-50 border border-amber-100 rounded-lg">
+              <p className="text-[11px] font-medium text-amber-800 mb-1.5">Eingänge benennen (wichtig bei mehreren Dateien, z.B. "Klausur" statt "fileIdA")</p>
+              <div className="space-y-1.5">
+                {fileFields.map((key) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-[11px] text-amber-700 font-mono w-16 flex-shrink-0">{key}</span>
+                    <input
+                      value={data.fieldLabels?.[key] || ''}
+                      onChange={(e) => onChange({ fieldLabels: { ...data.fieldLabels, [key]: e.target.value } })}
+                      placeholder={`z.B. "Klausur"`}
+                      className="flex-1 px-2 py-1 bg-white border border-amber-200 rounded text-xs outline-none focus:ring-2 focus:ring-amber-200"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {configurableProps.length === 0 && <p className="text-xs text-slate-400">Dieses Werkzeug braucht keine weiteren Parameter.</p>}
           {configurableProps.map(([key, schema]) => (
             <ParamField

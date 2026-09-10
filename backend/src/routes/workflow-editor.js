@@ -79,12 +79,16 @@ Nutze "tool" NUR wenn ein Werkzeug eindeutig passt und Parameter klar hervorgehe
 // Dateien gebraucht werden (siehe workflowGraphUtils.js im Frontend).
 router.post('/workflow-editor/test-run', async (req, res) => {
   try {
-    const { nodes, edges, fileIds, uploadAssignments } = req.body;
-    if (!nodes || nodes.length === 0) return res.status(400).json({ error: 'Mindestens ein Knoten erforderlich' });
+    const { nodes, edges, fileIds, uploadAssignments, history, message } = req.body;
 
-    const message = buildInstructionFromGraph([{ id: SOURCE_NODE_ID }, ...nodes], edges || [], uploadAssignments);
+    let effectiveMessage = message;
+    if (!effectiveMessage) {
+      if (!nodes || nodes.length === 0) return res.status(400).json({ error: 'Mindestens ein Knoten erforderlich' });
+      effectiveMessage = buildInstructionFromGraph([{ id: SOURCE_NODE_ID }, ...nodes], edges || [], uploadAssignments);
+    }
+
     const result = await runWithUser(req.user.username, () =>
-      agentEngine.runAgentLoop({ history: [], message, fileIds: fileIds || [] })
+      agentEngine.runAgentLoop({ history: history || [], message: effectiveMessage, fileIds: message ? [] : (fileIds || []) })
     );
     res.json(result);
   } catch (error) {
