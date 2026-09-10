@@ -4,11 +4,11 @@ const { requireAuth } = require('../middleware/requireAuth');
 const agentEngine = require('../services/agentEngine');
 const workflowStorage = require('../services/workflowStorageService');
 const { runWithUser, createMessage } = require('../services/anthropicClient');
+const { SOURCE_NODE_ID, buildInstructionFromGraph, toDisplaySteps } = require('../services/workflowGraphExecutor');
 
 router.use(requireAuth);
 
 const EDITOR_EXCLUDED_TOOLS = new Set(['save_workflow', 'list_workflows', 'get_workflow', 'save_template', 'list_templates', 'get_template']);
-const SOURCE_NODE_ID = 'upload';
 
 // Werkzeug-Definitionen fürs Frontend, damit Formulare/Eingabe-Anschlüsse dort
 // automatisch aus denselben input_schema-Beschreibungen gebaut werden wie beim
@@ -17,77 +17,6 @@ router.get('/workflow-editor/tools', (req, res) => {
   const tools = agentEngine.TOOLS.filter((t) => !EDITOR_EXCLUDED_TOOLS.has(t.name));
   res.json({ tools });
 });
-
-// --- Graph -> Ausfuehrungs-Anweisung -----------------------------------------
-//
-// Baut aus Knoten+Kanten eine praezise Anweisung fuer die bestehende Agenten-
-// Schleife. Ermittelt per topologischer Sortierung, welche Knoten unabhaengig
-// voneinander (parallel) bearbeitet werden koennen, und welche auf Ergebnisse
-// anderer Knoten warten muessen (z.B. ein Vergleichs-Knoten mit zwei Eingaengen).
-
-function topologicalGroups(nodes, edges) {
-  const nodeIds = nodes.map((n) => n.id);
-  const incoming = new Map(nodeIds.map((id) => [id, new Set()]));
-  for (const e of edges) {
-    if (e.source === SOURCE_NODE_ID) continue; // Upload ist immer sofort "verfuegbar"
-    if (incoming.has(e.target)) incoming.get(e.target).add(e.source);
-  }
-
-  const done = new Set([SOURCE_NODE_ID]);
-  const groups = [];
-  let remaining = nodeIds.filter((id) => id !== SOURCE_NODE_ID);
-
-  while (remaining.length > 0) {
-    const ready = remaining.filter((id) => [...incoming.get(id)].every((dep) => done.has(dep)));
-    if (ready.length === 0) {
-      throw new Error('Der Ablauf enthält einen Zirkelbezug (Knoten hängen gegenseitig voneinander ab) - bitte Verbindungen prüfen.');
-    }
-    groups.push(ready);
-    ready.forEach((id) => done.add(id));
-    remaining = remaining.filter((id) => !ready.includes(id));
-  }
-  return groups;
-}
-
-function describeInputs(nodeId, edges, nodesById) {
-  const incomingEdges = edges.filter((e) => e.target === nodeId);
-  if (incomingEdges.length === 0) return 'hochgeladene Datei(en)';
-  return incomingEdges
-    .map((e) => {
-      const label = e.targetHandle ? `${e.targetHandle} = ` : '';
-      const sourceDesc = e.source === SOURCE_NODE_ID ? 'hochgeladene Datei(en)' : `Ergebnis von Knoten "${nodesById.get(e.source)?.title}"`;
-      return `${label}${sourceDesc}`;
-    })
-    .join(', ');
-}
-
-function buildInstructionFromGraph(nodes, edges) {
-  const realNodes = nodes.filter((n) => n.id !== SOURCE_NODE_ID);
-  const nodesById = new Map(nodes.map((n) => [n.id, n]));
-  const groups = topologicalGroups(nodes, edges);
-
-  const groupTexts = groups.map((groupIds, gi) => {
-    const lines = groupIds.map((id) => {
-      const node = nodesById.get(id);
-      const inputDesc = describeInputs(id, edges, nodesById);
-      if (node.tool) {
-        return `- Knoten "${node.title}": Nutze GENAU das Werkzeug "${node.tool}" mit GENAU diesen Parametern: ${JSON.stringify(node.params || {})}. Eingabe: ${inputDesc}.`;
-      }
-      return `- Knoten "${node.title}": Freie Anweisung, entscheide selbst mit passenden Werkzeugen: ${node.instruction} (Eingabe: ${inputDesc})`;
-    });
-    const parallelNote = groupIds.length > 1 ? ' (diese Knoten sind unabhängig voneinander, bearbeite sie in einem Zug parallel)' : '';
-    return `Gruppe ${gi + 1}${parallelNote}:\n${lines.join('\n')}`;
-  });
-
-  return `Führe den folgenden Ablauf aus. Bearbeite die Gruppen der Reihe nach; Knoten innerhalb derselben Gruppe hängen nicht voneinander ab.\n\n${groupTexts.join('\n\n')}\n\nWeiche bei Knoten mit fest vorgegebenem Werkzeug/Parametern NICHT davon ab (außer bei fileId-Werten, die du aus den angegebenen Eingaben übernimmst).`;
-}
-
-function toDisplaySteps(nodes) {
-  return nodes.filter((n) => n.id !== SOURCE_NODE_ID).map((n) => ({
-    title: n.title,
-    description: n.tool ? `${n.tool}(${JSON.stringify(n.params || {})})` : n.instruction,
-  }));
-}
 
 // --- KI-Vorschlag -------------------------------------------------------------
 
@@ -120,7 +49,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, keine Erklärung, kein Markdown,
   ]
 }
 
-Nutze "tool" NUR wenn ein Werkzeug eindeutig passt und Parameter klar hervorgehen (fileId/fileIdA/fileIdB/fileIds NIEMALS in "params", das übernehmen die Kanten). Nutze sonst "instruction". Bei Werkzeugen mit mehreren Datei-Parametern (z.B. compare_documents mit fileIdA/fileIdB) MUSS "targetHandle" pro eingehender Kante den jeweiligen Parameter-Namen angeben. Erzeuge parallele Pfade (mehrere Kanten von "upload" oder von einem gemeinsamen Vorgänger), wenn die Beschreibung das nahelegt (z.B. "vergleiche zwei Dokumente", "verarbeite beide Dateien unabhängig").`;
+Nutze "tool" NUR wenn ein Werkzeug eindeutig passt und Parameter klar hervorgehen (fileId/fileIdA/fileIdB/fileIds NIEMALS in "params", das übernehmen die Kanten). Nutze sonst "instruction". Bei Werkzeugen mit mehreren Datei-Parametern (z.B. compare_documents mit fileIdA/fileIdB) MUSS "targetHandle" pro eingehender Kante den jeweiligen Parameter-Namen angeben. Erzeuge parallele Pfade (mehrere Kanten von "upload" oder von einem gemeinsamen Vorgänger), wenn die Beschreibung das nahelegt (z.B. "vergleiche zwei Dokumente", "verarbeite beide Dateien unabhängig"). WICHTIG: Wenn mehrere unterschiedliche hochgeladene Dateien gebraucht werden (z.B. Klausur UND Musterlösung), erzeuge fuer jede eine EIGENE Kante von "upload" mit jeweils eigenem "targetHandle" - nie beide Datei-Rollen ueber dieselbe Kante.`;
 
     const response = await createMessage({
       model: 'claude-sonnet-4-5',
@@ -145,12 +74,15 @@ Nutze "tool" NUR wenn ein Werkzeug eindeutig passt und Parameter klar hervorgehe
 
 // --- Testlauf / Speichern -----------------------------------------------------
 
+// uploadAssignments (optional): { "knotenId:parameterName": "dateiname.pdf" } -
+// erzeugt aus den benannten Upload-Slots im Frontend, wenn mehrere unterschiedliche
+// Dateien gebraucht werden (siehe workflowGraphUtils.js im Frontend).
 router.post('/workflow-editor/test-run', async (req, res) => {
   try {
-    const { nodes, edges, fileIds } = req.body;
+    const { nodes, edges, fileIds, uploadAssignments } = req.body;
     if (!nodes || nodes.length === 0) return res.status(400).json({ error: 'Mindestens ein Knoten erforderlich' });
 
-    const message = buildInstructionFromGraph([{ id: SOURCE_NODE_ID }, ...nodes], edges || []);
+    const message = buildInstructionFromGraph([{ id: SOURCE_NODE_ID }, ...nodes], edges || [], uploadAssignments);
     const result = await runWithUser(req.user.username, () =>
       agentEngine.runAgentLoop({ history: [], message, fileIds: fileIds || [] })
     );
@@ -167,8 +99,8 @@ router.post('/workflow-editor/save', (req, res) => {
       return res.status(400).json({ error: 'name und mindestens ein Knoten erforderlich' });
     }
     const fullNodes = [{ id: SOURCE_NODE_ID }, ...nodes];
-    const instruction = buildInstructionFromGraph(fullNodes, edges || []); // wirft bei Zirkelbezug
-    const config = { editorGraph: { nodes, edges: edges || [], sourceMode: sourceMode || 'upload' }, instruction };
+    buildInstructionFromGraph(fullNodes, edges || []); // nur zur Zirkelbezug-Pruefung beim Speichern
+    const config = { editorGraph: { nodes, edges: edges || [], sourceMode: sourceMode || 'upload' } };
     const record = workflowStorage.saveWorkflow(name, description, config, toDisplaySteps(fullNodes), req.user.username);
     res.json({ workflow: record });
   } catch (error) {
@@ -185,8 +117,8 @@ router.patch('/workflow-editor/:id', (req, res) => {
     }
     const { name, description, nodes, edges, sourceMode } = req.body;
     const fullNodes = [{ id: SOURCE_NODE_ID }, ...nodes];
-    const instruction = buildInstructionFromGraph(fullNodes, edges || []);
-    const config = { editorGraph: { nodes, edges: edges || [], sourceMode: sourceMode || 'upload' }, instruction };
+    buildInstructionFromGraph(fullNodes, edges || []); // nur zur Zirkelbezug-Pruefung
+    const config = { editorGraph: { nodes, edges: edges || [], sourceMode: sourceMode || 'upload' } };
     const updated = workflowStorage.updateWorkflow(req.params.id, { name, description, steps: toDisplaySteps(fullNodes), config });
     res.json({ workflow: updated });
   } catch (error) {

@@ -5,6 +5,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Plus, Trash2, Wrench, MessageSquareText, Play, Save, Loader2, Upload, Download, X, FileInput, Cloud } from 'lucide-react';
+import { getUploadSlots } from './workflowGraphUtils';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 const FILE_REF_FIELDS = new Set(['fileId', 'fileIdA', 'fileIdB', 'fileIds']);
@@ -75,6 +76,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   const [sourceMode, setSourceMode] = useState(existingWorkflow?.config?.editorGraph?.sourceMode || 'upload');
 
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [slotFiles, setSlotFiles] = useState({});
   const [running, setRunning] = useState(false);
   const [testReply, setTestReply] = useState('');
   const [testOutputFiles, setTestOutputFiles] = useState([]);
@@ -190,6 +192,15 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
     edges: edges.map((e) => ({ source: e.source, target: e.target, targetHandle: e.targetHandle })),
   });
 
+  const uploadOneFile = async (file) => {
+    const formData = new FormData();
+    formData.append('files', file);
+    const res = await authFetch(`${API_URL}/assistant/upload`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data.files[0];
+  };
+
   const handleFileSelect = async (e) => {
     const selected = Array.from(e.target.files || []);
     if (selected.length === 0) return;
@@ -205,6 +216,21 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
     }
   };
 
+  const handleSlotFileSelect = async (slotKey, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const uploaded = await uploadOneFile(file);
+      setSlotFiles((prev) => ({ ...prev, [slotKey]: uploaded }));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const currentGraphPayload = toGraphPayload();
+  const uploadSlots = getUploadSlots(currentGraphPayload.nodes, currentGraphPayload.edges);
+  const canTestRun = uploadSlots ? uploadSlots.every((s) => slotFiles[s.key]) : pendingFiles.length > 0;
+
   const testRun = async () => {
     setRunning(true);
     setError('');
@@ -212,10 +238,14 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
     setTestOutputFiles([]);
     try {
       const payload = toGraphPayload();
+      const fileIds = uploadSlots ? uploadSlots.map((s) => slotFiles[s.key]) : pendingFiles;
+      const uploadAssignments = uploadSlots
+        ? Object.fromEntries(uploadSlots.map((s) => [s.key, slotFiles[s.key]?.filename]))
+        : undefined;
       const res = await authFetch(`${API_URL}/workflow-editor/test-run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, fileIds: pendingFiles }),
+        body: JSON.stringify({ ...payload, fileIds, uploadAssignments }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -384,16 +414,39 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
 
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-3">Testlauf</p>
-        <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:border-slate-300 bg-white mb-3">
-          <Upload className="w-4 h-4 text-slate-400" />
-          <span className="text-xs text-slate-500">Testdatei(en) hochladen</span>
-          <input type="file" multiple className="hidden" onChange={handleFileSelect} />
-        </label>
-        {pendingFiles.length > 0 && (
-          <div className="mb-3 space-y-1">{pendingFiles.map((f, i) => <p key={i} className="text-xs text-slate-500">📄 {f.filename}</p>)}</div>
+        {uploadSlots ? (
+          <div className="space-y-2 mb-3">
+            {uploadSlots.map((slot) => (
+              <div key={slot.key}>
+                <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-1 block">{slot.label}</label>
+                {slotFiles[slot.key] ? (
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs">
+                    <span className="truncate text-slate-600">📄 {slotFiles[slot.key].filename}</span>
+                    <button onClick={() => setSlotFiles((prev) => { const n = { ...prev }; delete n[slot.key]; return n; })} className="text-slate-400 hover:text-red-600 flex-shrink-0"><X className="w-3 h-3" /></button>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 py-2 border-2 border-dashed border-slate-200 rounded-lg text-xs text-slate-500 hover:border-slate-300 cursor-pointer bg-white">
+                    <Upload className="w-3.5 h-3.5" /> Datei wählen
+                    <input type="file" className="hidden" onChange={(e) => handleSlotFileSelect(slot.key, e)} />
+                  </label>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:border-slate-300 bg-white mb-3">
+              <Upload className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-500">Testdatei(en) hochladen</span>
+              <input type="file" multiple className="hidden" onChange={handleFileSelect} />
+            </label>
+            {pendingFiles.length > 0 && (
+              <div className="mb-3 space-y-1">{pendingFiles.map((f, i) => <p key={i} className="text-xs text-slate-500">📄 {f.filename}</p>)}</div>
+            )}
+          </>
         )}
         <button
-          onClick={testRun} disabled={nodes.length <= 1 || running}
+          onClick={testRun} disabled={!canTestRun || running}
           className="w-full py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-40 flex items-center justify-center gap-2"
         >
           {running ? <><Loader2 className="w-4 h-4 animate-spin" />Läuft...</> : <><Play className="w-4 h-4" />Testen</>}

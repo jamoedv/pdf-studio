@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/requireAuth');
 const workflowStorage = require('../services/workflowStorageService');
 const agentEngine = require('../services/agentEngine');
 const { runWithUser } = require('../services/anthropicClient');
+const { SOURCE_NODE_ID, buildInstructionFromGraph } = require('../services/workflowGraphExecutor');
 
 router.use(requireAuth);
 
@@ -77,15 +78,29 @@ router.post('/apps/:id/run', async (req, res) => {
       return res.status(403).json({ error: 'Keine Berechtigung, diese App auszuführen' });
     }
 
-    const { fileIds, history, message } = req.body;
-    const effectiveMessage = message || `Führe den gespeicherten Workflow "${wf.name}" (id: ${wf.id}) mit der/den angehängten Datei(en) aus.`;
+    const { fileIds, history, message, uploadAssignments } = req.body;
+
+    // Im Editor gebaute Workflows haben eine strukturierte Graph-Definition -
+    // daraus bauen wir die Anweisung bei JEDEM Lauf frisch, mit den gerade
+    // hochgeladenen Dateinamen (wichtig bei mehreren Datei-Eingaengen, z.B.
+    // Klausur + Musterlösung, damit nichts verwechselt wird). Rein im Chat
+    // erstellte Workflows haben das nicht - dafuer bleibt der bisherige Weg
+    // (Assistent ruft get_workflow selbst auf) bestehen.
+    let effectiveMessage = message;
+    if (!effectiveMessage && wf.config?.editorGraph) {
+      const { nodes, edges } = wf.config.editorGraph;
+      effectiveMessage = buildInstructionFromGraph([{ id: SOURCE_NODE_ID }, ...nodes], edges || [], uploadAssignments);
+    }
+    if (!effectiveMessage) {
+      effectiveMessage = `Führe den gespeicherten Workflow "${wf.name}" (id: ${wf.id}) mit der/den angehängten Datei(en) aus.`;
+    }
 
     const result = await runWithUser(req.user.username, () =>
       agentEngine.runAgentLoop({ history: history || [], message: effectiveMessage, fileIds })
     );
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
 });
 

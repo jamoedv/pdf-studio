@@ -3,6 +3,7 @@ import { Play, Settings, X, Loader2, Upload, Download, Users, Globe, Pencil, Che
 import Modal from './Modal';
 import WorkflowEditor from './WorkflowEditor';
 import OneDriveBrowser from './OneDriveBrowser';
+import { getUploadSlots } from './workflowGraphUtils';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -299,7 +300,9 @@ function ManageAppModal({ authFetch, app, onClose, onSaved }) {
 
 function RunAppModal({ authFetch, app, onClose }) {
   const isCloudSource = app.config?.editorGraph?.sourceMode === 'cloud';
+  const uploadSlots = getUploadSlots(app.config?.editorGraph?.nodes, app.config?.editorGraph?.edges);
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [slotFiles, setSlotFiles] = useState({}); // { 'n1:fileIdA': {fileId, filename} }
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [reply, setReply] = useState('');
@@ -308,6 +311,16 @@ function RunAppModal({ authFetch, app, onClose }) {
   const [needsAnswer, setNeedsAnswer] = useState(false);
   const [answer, setAnswer] = useState('');
   const [showCloudPicker, setShowCloudPicker] = useState(false);
+  const [activeSlotKey, setActiveSlotKey] = useState(null); // welcher Slot gerade befuellt wird
+
+  const uploadOneFile = async (file) => {
+    const formData = new FormData();
+    formData.append('files', file);
+    const res = await authFetch(`${API_URL}/assistant/upload`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload fehlgeschlagen');
+    return data.files[0];
+  };
 
   const handleFileSelect = async (e) => {
     const selected = Array.from(e.target.files || []);
@@ -325,6 +338,18 @@ function RunAppModal({ authFetch, app, onClose }) {
     }
   };
 
+  const handleSlotFileSelect = async (slotKey, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError('');
+    try {
+      const uploaded = await uploadOneFile(file);
+      setSlotFiles((prev) => ({ ...prev, [slotKey]: uploaded }));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const importFromCloud = async (picked) => {
     setShowCloudPicker(false);
     setError('');
@@ -336,21 +361,46 @@ function RunAppModal({ authFetch, app, onClose }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Import fehlgeschlagen');
-      setPendingFiles((prev) => [...prev, { fileId: data.fileId, filename: data.filename }]);
+      const imported = { fileId: data.fileId, filename: data.filename };
+      if (activeSlotKey) {
+        setSlotFiles((prev) => ({ ...prev, [activeSlotKey]: imported }));
+        setActiveSlotKey(null);
+      } else {
+        setPendingFiles((prev) => [...prev, imported]);
+      }
     } catch (err) {
       setError(err.message);
     }
   };
 
+  const openCloudPickerForSlot = (slotKey) => {
+    setActiveSlotKey(slotKey);
+    setShowCloudPicker(true);
+  };
+
+  const canRun = uploadSlots
+    ? uploadSlots.every((s) => slotFiles[s.key])
+    : pendingFiles.length > 0;
+
   const run = async (continuationMessage) => {
     setRunning(true);
     setError('');
     try {
+      const fileIds = continuationMessage
+        ? []
+        : uploadSlots
+          ? uploadSlots.map((s) => slotFiles[s.key])
+          : pendingFiles;
+      const uploadAssignments = uploadSlots
+        ? Object.fromEntries(uploadSlots.map((s) => [s.key, slotFiles[s.key]?.filename]))
+        : undefined;
+
       const res = await authFetch(`${API_URL}/apps/${app.id}/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileIds: continuationMessage ? [] : pendingFiles,
+          fileIds,
+          uploadAssignments,
           history: continuationMessage ? history : [],
           message: continuationMessage || undefined,
         }),
@@ -392,7 +442,33 @@ function RunAppModal({ authFetch, app, onClose }) {
 
         {!reply && (
           <>
-            {isCloudSource ? (
+            {uploadSlots ? (
+              <div className="space-y-2.5">
+                {uploadSlots.map((slot) => (
+                  <div key={slot.key}>
+                    <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-1 block">{slot.label}</label>
+                    {slotFiles[slot.key] ? (
+                      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+                        <span className="truncate text-slate-600">📄 {slotFiles[slot.key].filename}</span>
+                        <button onClick={() => setSlotFiles((prev) => { const n = { ...prev }; delete n[slot.key]; return n; })} className="text-slate-400 hover:text-red-600 flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ) : isCloudSource ? (
+                      <button
+                        onClick={() => openCloudPickerForSlot(slot.key)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-slate-200 rounded-lg text-sm text-slate-500 hover:border-slate-300"
+                      >
+                        <Cloud className="w-4 h-4" /> Aus OneDrive/SharePoint wählen
+                      </button>
+                    ) : (
+                      <label className="flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-slate-200 rounded-lg text-sm text-slate-500 hover:border-slate-300 cursor-pointer">
+                        <Upload className="w-4 h-4" /> Datei wählen
+                        <input type="file" className="hidden" onChange={(e) => handleSlotFileSelect(slot.key, e)} />
+                      </label>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : isCloudSource ? (
               <button
                 onClick={() => setShowCloudPicker(true)}
                 className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 w-full"
@@ -408,7 +484,7 @@ function RunAppModal({ authFetch, app, onClose }) {
               </label>
             )}
 
-            {pendingFiles.length > 0 && (
+            {!uploadSlots && pendingFiles.length > 0 && (
               <div className="space-y-1">
                 {pendingFiles.map((f, i) => (
                   <p key={i} className="text-xs text-slate-500 truncate">📄 {f.filename}</p>
@@ -418,7 +494,7 @@ function RunAppModal({ authFetch, app, onClose }) {
 
             <button
               onClick={() => run()}
-              disabled={pendingFiles.length === 0 || running}
+              disabled={!canRun || running}
               className="w-full py-2.5 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 disabled:opacity-40 flex items-center justify-center gap-2"
             >
               {running ? <><Loader2 className="w-4 h-4 animate-spin" />Läuft...</> : 'Ausführen'}
