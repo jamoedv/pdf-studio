@@ -33,9 +33,11 @@ function topologicalGroups(nodes, edges) {
 function describeInputs(nodeId, edges, nodesById, uploadAssignments) {
   const incomingEdges = edges.filter((e) => e.target === nodeId);
   if (incomingEdges.length === 0) return 'hochgeladene Datei(en)';
+  const targetNode = nodesById.get(nodeId);
   return incomingEdges
     .map((e) => {
-      const label = e.targetHandle ? `${e.targetHandle} = ` : '';
+      const friendlyLabel = targetNode?.fieldLabels?.[e.targetHandle] || e.targetHandle;
+      const label = e.targetHandle ? `${e.targetHandle} ("${friendlyLabel}") = ` : '';
       let sourceDesc;
       if (e.source === SOURCE_NODE_ID) {
         const slotKey = `${e.target}:${e.targetHandle || 'Eingabe'}`;
