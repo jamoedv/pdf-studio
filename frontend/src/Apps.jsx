@@ -64,7 +64,7 @@ export default function Apps({ authFetch, currentUser }) {
               <Settings className="w-3.5 h-3.5" />
             </button>
           )}
-          {canManage && wf.config?.editorSteps && (
+          {canManage && wf.config?.editorGraph && (
             <button
               onClick={() => setEditorState(wf)}
               className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50"
