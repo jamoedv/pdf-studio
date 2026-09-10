@@ -59,6 +59,18 @@ router.get('/auth/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
+// Leichtgewichtige Liste NUR der Nutzernamen (keine Rollen/sonstigen Daten) -
+// bewusst OHNE requireAdmin, damit auch normale Nutzer beim Freigeben eines
+// Workflow-Apps aus der Liste vorhandener Nutzer waehlen koennen.
+router.get('/auth/usernames', requireAuth, async (req, res, next) => {
+  try {
+    const users = await userService.listUsers();
+    res.json({ usernames: users.map(u => u.username) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/auth/users', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const users = await userService.listUsers();
@@ -71,7 +83,7 @@ router.get('/auth/users', requireAuth, requireAdmin, async (req, res, next) => {
 router.patch('/auth/users/:username/role', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { role } = req.body;
-    if (!['admin', 'user'].includes(role)) {
+    if (!['admin', 'poweruser', 'user'].includes(role)) {
       return res.status(400).json({ error: 'Ungültige Rolle' });
     }
     const result = await userService.setRole(req.params.username, role);

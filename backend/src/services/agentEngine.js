@@ -1,4 +1,5 @@
 const anthropicClient = require('./anthropicClient');
+const { getCurrentUsername } = require('./anthropicClient');
 const assistantTools = require('./assistantToolsService');
 const workflowStorage = require('./workflowStorageService');
 const templateStorage = require('./templateStorageService');
@@ -383,7 +384,7 @@ async function executeTool(name, input, outputFiles) {
     }
 
     case 'save_workflow': {
-      const record = workflowStorage.saveWorkflow(input.name, input.description, input.config, input.steps || []);
+      const record = workflowStorage.saveWorkflow(input.name, input.description, input.config, input.steps || [], getCurrentUsername());
       return { id: record.id, message: `Workflow "${input.name}" gespeichert` };
     }
 

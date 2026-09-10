@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/requireAuth');
 const upload = require('../middleware/upload');
 const agentEngine = require('../services/agentEngine');
+const { runWithUser } = require('../services/anthropicClient');
 
 router.use(requireAuth);
 
@@ -21,7 +22,11 @@ router.post('/assistant/chat', async (req, res) => {
     const { history, message, fileIds, model } = req.body;
     if (!message || !message.trim()) return res.status(400).json({ error: 'message erforderlich' });
 
-    const result = await agentEngine.runAgentLoop({ history, message, fileIds, model });
+    // WICHTIG: Ohne diesen Nutzerkontext wuesste agentEngine (z.B. beim Speichern
+    // eines Workflows) nicht, wer der aktuelle Nutzer ist - ownerUsername bliebe leer.
+    const result = await runWithUser(req.user.username, () =>
+      agentEngine.runAgentLoop({ history, message, fileIds, model })
+    );
     res.json(result);
   } catch (error) {
     console.error('Assistant chat error:', error.message);
