@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, Settings, X, Loader2, Upload, Download, Users, Globe, Pencil, Check, Plus } from 'lucide-react';
+import { Play, Settings, X, Loader2, Upload, Download, Users, Globe, Pencil, Check, Plus, Cloud } from 'lucide-react';
 import Modal from './Modal';
 import WorkflowEditor from './WorkflowEditor';
+import OneDriveBrowser from './OneDriveBrowser';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -297,6 +298,7 @@ function ManageAppModal({ authFetch, app, onClose, onSaved }) {
 }
 
 function RunAppModal({ authFetch, app, onClose }) {
+  const isCloudSource = app.config?.editorGraph?.sourceMode === 'cloud';
   const [pendingFiles, setPendingFiles] = useState([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
@@ -305,6 +307,7 @@ function RunAppModal({ authFetch, app, onClose }) {
   const [history, setHistory] = useState([]);
   const [needsAnswer, setNeedsAnswer] = useState(false);
   const [answer, setAnswer] = useState('');
+  const [showCloudPicker, setShowCloudPicker] = useState(false);
 
   const handleFileSelect = async (e) => {
     const selected = Array.from(e.target.files || []);
@@ -317,6 +320,23 @@ function RunAppModal({ authFetch, app, onClose }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload fehlgeschlagen');
       setPendingFiles((prev) => [...prev, ...data.files]);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const importFromCloud = async (picked) => {
+    setShowCloudPicker(false);
+    setError('');
+    try {
+      const res = await authFetch(`${API_URL}/onedrive/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: picked.itemId, driveId: picked.driveId, filename: picked.filename }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import fehlgeschlagen');
+      setPendingFiles((prev) => [...prev, { fileId: data.fileId, filename: data.filename }]);
     } catch (err) {
       setError(err.message);
     }
@@ -372,11 +392,21 @@ function RunAppModal({ authFetch, app, onClose }) {
 
         {!reply && (
           <>
-            <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-slate-300">
-              <Upload className="w-5 h-5 text-slate-400" />
-              <span className="text-sm text-slate-500">Datei(en) hierher ziehen oder klicken</span>
-              <input type="file" multiple className="hidden" onChange={handleFileSelect} />
-            </label>
+            {isCloudSource ? (
+              <button
+                onClick={() => setShowCloudPicker(true)}
+                className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 w-full"
+              >
+                <Cloud className="w-5 h-5 text-slate-400" />
+                <span className="text-sm text-slate-500">Datei aus OneDrive/SharePoint wählen</span>
+              </button>
+            ) : (
+              <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-slate-300">
+                <Upload className="w-5 h-5 text-slate-400" />
+                <span className="text-sm text-slate-500">Datei(en) hierher ziehen oder klicken</span>
+                <input type="file" multiple className="hidden" onChange={handleFileSelect} />
+              </label>
+            )}
 
             {pendingFiles.length > 0 && (
               <div className="space-y-1">
@@ -439,6 +469,15 @@ function RunAppModal({ authFetch, app, onClose }) {
           </div>
         )}
       </div>
+
+      {showCloudPicker && (
+        <OneDriveBrowser
+          authFetch={authFetch}
+          mode="pick"
+          onSelect={importFromCloud}
+          onClose={() => setShowCloudPicker(false)}
+        />
+      )}
     </Modal>
   );
 }

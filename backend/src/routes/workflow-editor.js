@@ -162,13 +162,13 @@ router.post('/workflow-editor/test-run', async (req, res) => {
 
 router.post('/workflow-editor/save', (req, res) => {
   try {
-    const { name, description, nodes, edges } = req.body;
+    const { name, description, nodes, edges, sourceMode } = req.body;
     if (!name || !nodes || nodes.length === 0) {
       return res.status(400).json({ error: 'name und mindestens ein Knoten erforderlich' });
     }
     const fullNodes = [{ id: SOURCE_NODE_ID }, ...nodes];
     const instruction = buildInstructionFromGraph(fullNodes, edges || []); // wirft bei Zirkelbezug
-    const config = { editorGraph: { nodes, edges: edges || [] }, instruction };
+    const config = { editorGraph: { nodes, edges: edges || [], sourceMode: sourceMode || 'upload' }, instruction };
     const record = workflowStorage.saveWorkflow(name, description, config, toDisplaySteps(fullNodes), req.user.username);
     res.json({ workflow: record });
   } catch (error) {
@@ -183,10 +183,10 @@ router.patch('/workflow-editor/:id', (req, res) => {
     if (wf.ownerUsername !== req.user.username && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Keine Berechtigung' });
     }
-    const { name, description, nodes, edges } = req.body;
+    const { name, description, nodes, edges, sourceMode } = req.body;
     const fullNodes = [{ id: SOURCE_NODE_ID }, ...nodes];
     const instruction = buildInstructionFromGraph(fullNodes, edges || []);
-    const config = { editorGraph: { nodes, edges: edges || [] }, instruction };
+    const config = { editorGraph: { nodes, edges: edges || [], sourceMode: sourceMode || 'upload' }, instruction };
     const updated = workflowStorage.updateWorkflow(req.params.id, { name, description, steps: toDisplaySteps(fullNodes), config });
     res.json({ workflow: updated });
   } catch (error) {

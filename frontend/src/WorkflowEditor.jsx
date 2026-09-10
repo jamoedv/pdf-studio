@@ -4,7 +4,7 @@ import {
   Handle, Position, MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Plus, Trash2, Wrench, MessageSquareText, Play, Save, Loader2, Upload, Download, X, FileInput } from 'lucide-react';
+import { Plus, Trash2, Wrench, MessageSquareText, Play, Save, Loader2, Upload, Download, X, FileInput, Cloud } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 const FILE_REF_FIELDS = new Set(['fileId', 'fileIdA', 'fileIdB', 'fileIds']);
@@ -13,11 +13,14 @@ const newId = () => `n${Date.now()}-${idCounter++}`;
 
 // --- Eigene Knoten-Typen -------------------------------------------------
 
-function SourceNode() {
+function SourceNode({ data }) {
   return (
-    <div className="px-4 py-3 bg-slate-900 text-white rounded-xl shadow-sm text-sm font-medium flex items-center gap-2">
-      <FileInput className="w-4 h-4" />
-      Hochgeladene Datei(en)
+    <div
+      onClick={data.onToggle}
+      className="px-4 py-3 bg-slate-900 text-white rounded-xl shadow-sm text-sm font-medium flex items-center gap-2 cursor-pointer hover:bg-slate-800"
+    >
+      {data.mode === 'cloud' ? <Cloud className="w-4 h-4" /> : <FileInput className="w-4 h-4" />}
+      {data.mode === 'cloud' ? 'OneDrive/SharePoint-Datei' : 'Hochgeladene Datei(en)'}
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -62,12 +65,14 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   const [name, setName] = useState(existingWorkflow?.name || '');
   const [description, setDescription] = useState(existingWorkflow?.description || '');
   const [availableTools, setAvailableTools] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [showAddPicker, setShowAddPicker] = useState(false);
   const [openNodeId, setOpenNodeId] = useState(null);
   const [suggestPrompt, setSuggestPrompt] = useState('');
   const [suggesting, setSuggesting] = useState(false);
+  const [sourceMode, setSourceMode] = useState(existingWorkflow?.config?.editorGraph?.sourceMode || 'upload');
 
   const [pendingFiles, setPendingFiles] = useState([]);
   const [running, setRunning] = useState(false);
@@ -102,6 +107,10 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
       .then((r) => r.json())
       .then((d) => setAvailableTools(d.tools || []))
       .catch(() => setError('Werkzeug-Liste konnte nicht geladen werden'));
+    authFetch(`${API_URL}/document-templates/library`)
+      .then((r) => r.json())
+      .then((d) => setTemplates(d.templates || []))
+      .catch(() => {});
   }, [authFetch]);
 
   // Sobald die Werkzeug-Liste da ist, das passende Schema in bestehende Knoten
@@ -115,6 +124,17 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableTools]);
+
+  // Quell-Knoten (Upload vs. Cloud) immer mit aktuellem Modus + Umschalt-Callback
+  // synchron halten.
+  useEffect(() => {
+    setNodes((prev) => prev.map((n) => (
+      n.id === 'upload'
+        ? { ...n, data: { mode: sourceMode, onToggle: () => setSourceMode((m) => (m === 'upload' ? 'cloud' : 'upload')) } }
+        : n
+    )));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceMode]);
 
   const openNode = useCallback((id) => setOpenNodeId(id), []);
 
@@ -158,6 +178,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   };
 
   const toGraphPayload = () => ({
+    sourceMode,
     nodes: nodes.filter((n) => n.id !== 'upload').map((n) => ({
       id: n.id,
       title: n.data.title,
@@ -354,6 +375,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
       {openNodeId && openNode_data && (
         <NodeConfigPanel
           data={openNode_data}
+          templates={templates}
           onChange={(updates) => updateNodeData(openNodeId, updates)}
           onDelete={() => removeNode(openNodeId)}
           onClose={() => setOpenNodeId(null)}
@@ -406,7 +428,7 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   );
 }
 
-function NodeConfigPanel({ data, onChange, onDelete, onClose }) {
+function NodeConfigPanel({ data, templates, onChange, onDelete, onClose }) {
   const configurableProps = data.tool
     ? Object.entries(data.tool.input_schema.properties || {}).filter(([key]) => !FILE_REF_FIELDS.has(key))
     : [];
@@ -440,6 +462,7 @@ function NodeConfigPanel({ data, onChange, onDelete, onClose }) {
               required={(data.tool.input_schema.required || []).includes(key)}
               value={data.params?.[key]}
               onChange={(val) => onChange({ params: { ...data.params, [key]: val } })}
+              templates={templates}
             />
           ))}
         </div>
@@ -448,8 +471,21 @@ function NodeConfigPanel({ data, onChange, onDelete, onClose }) {
   );
 }
 
-function ParamField({ paramKey, schema, required, value, onChange }) {
+function ParamField({ paramKey, schema, required, value, onChange, templates }) {
   const label = `${paramKey}${required ? ' *' : ''}`;
+
+  if (paramKey === 'templateId') {
+    return (
+      <div>
+        <label className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Vorlage</label>
+        <select value={value || ''} onChange={(e) => onChange(e.target.value)} className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm outline-none focus:ring-2 focus:ring-blue-200">
+          <option value="" disabled>Vorlage wählen...</option>
+          {(templates || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        {(templates || []).length === 0 && <p className="text-[11px] text-amber-600 mt-0.5">Noch keine Vorlagen im Vorlagen-Editor gespeichert.</p>}
+      </div>
+    );
+  }
 
   if (schema.enum) {
     return (
