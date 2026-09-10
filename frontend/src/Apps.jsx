@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Play, Settings, X, Loader2, Upload, Download, Users, Globe, Pencil, Check } from 'lucide-react';
+import { Play, Settings, X, Loader2, Upload, Download, Users, Globe, Pencil, Check, Plus } from 'lucide-react';
 import Modal from './Modal';
+import WorkflowEditor from './WorkflowEditor';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 
@@ -11,6 +12,7 @@ export default function Apps({ authFetch, currentUser }) {
   const [error, setError] = useState('');
   const [manageApp, setManageApp] = useState(null); // Workflow-Objekt oder null
   const [runApp, setRunApp] = useState(null);
+  const [editorState, setEditorState] = useState(null); // 'new' | workflow-Objekt | null
 
   const isPowerUserOrAdmin = currentUser?.role === 'poweruser' || currentUser?.role === 'admin';
 
@@ -62,14 +64,44 @@ export default function Apps({ authFetch, currentUser }) {
               <Settings className="w-3.5 h-3.5" />
             </button>
           )}
+          {canManage && wf.config?.editorSteps && (
+            <button
+              onClick={() => setEditorState(wf)}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-50"
+              title="Im Editor bearbeiten"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     );
   };
 
+  if (editorState) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <WorkflowEditor
+          authFetch={authFetch}
+          existingWorkflow={editorState === 'new' ? null : editorState}
+          onClose={() => setEditorState(null)}
+          onSaved={() => { setEditorState(null); load(); }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => setEditorState('new')}
+          className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800"
+        >
+          <Plus className="w-4 h-4" /> Workflow im Editor erstellen
+        </button>
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
