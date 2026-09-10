@@ -19,6 +19,8 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
   const [showAddPicker, setShowAddPicker] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [suggestPrompt, setSuggestPrompt] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
 
   // Testlauf
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -32,6 +34,27 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
       .then((d) => setAvailableTools(d.tools || []))
       .catch(() => setError('Werkzeug-Liste konnte nicht geladen werden'));
   }, [authFetch]);
+
+  const suggestSteps = async () => {
+    if (!suggestPrompt.trim()) return;
+    setSuggesting(true);
+    setError('');
+    try {
+      const res = await authFetch(`${API_URL}/workflow-editor/suggest-steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: suggestPrompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const newSteps = data.steps.map((s) => ({ ...s, id: newStepId(), params: s.params || {} }));
+      setSteps((prev) => [...prev, ...newSteps]);
+      setSuggestPrompt('');
+    } catch (err) {
+      setError(err.message);
+    }
+    setSuggesting(false);
+  };
 
   const addToolStep = (tool) => {
     setSteps((prev) => [...prev, {
@@ -158,6 +181,27 @@ export default function WorkflowEditor({ authFetch, existingWorkflow, onClose, o
           rows={2}
           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-200 resize-none"
         />
+      </div>
+
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
+        <label className="text-xs font-medium text-blue-900 mb-1.5 block">KI-Vorschlag (optional)</label>
+        <div className="flex gap-2">
+          <textarea
+            value={suggestPrompt}
+            onChange={(e) => setSuggestPrompt(e.target.value)}
+            placeholder='z.B. "Dreh die PDF um 90°, füg dann ein Vertraulich-Wasserzeichen hinzu"'
+            rows={2}
+            className="flex-1 px-3 py-2 bg-white border border-blue-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-300 resize-none"
+          />
+          <button
+            onClick={suggestSteps}
+            disabled={!suggestPrompt.trim() || suggesting}
+            className="px-4 bg-blue-900 text-white rounded-lg text-sm font-medium hover:bg-blue-950 disabled:opacity-40 flex items-center gap-2 flex-shrink-0"
+          >
+            {suggesting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Vorschlagen'}
+          </button>
+        </div>
+        <p className="text-[11px] text-blue-700/70 mt-1.5">Schlägt Schritte vor, die du danach frei bearbeiten kannst — nichts wird automatisch ausgeführt.</p>
       </div>
 
       <div className="space-y-3 mb-4">
