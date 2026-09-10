@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Bookmark, History, BarChart3, Users, DollarSign, FolderCog } from 'lucide-react';
+import { Sparkles, Bookmark, History, BarChart3, Users, DollarSign, FolderCog, LayoutGrid } from 'lucide-react';
 import DocmaiticLogo from './DocmaiticLogo';
 
 export default function Sidebar({
@@ -62,6 +62,12 @@ export default function Sidebar({
             Mit KI
           </button>
         </div>
+      </div>
+
+      <div className="px-2.5 pb-3">
+        <NavRow active={activePanel === 'apps'} onClick={() => setActivePanel('apps')}>
+          <span className="flex items-center gap-2 font-medium"><LayoutGrid className="w-3.5 h-3.5" />Apps</span>
+        </NavRow>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2.5 space-y-4 pb-4">

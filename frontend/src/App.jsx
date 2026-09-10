@@ -4,6 +4,7 @@ import WatchedFolders from './WatchedFolders';
 import Modal from './Modal';
 import DocmaiticLogo from './DocmaiticLogo';
 import Sidebar from './Sidebar';
+import Apps from './Apps';
 import TemplateEditor from './TemplateEditor';
 import ExamGrading from './ExamGrading';
 import Assistant from './Assistant';
@@ -1134,7 +1135,8 @@ export default function App() {
 
             <div className="mb-6 flex items-center justify-between">
               <h1 className="text-lg font-semibold text-slate-900">
-                {activePanel === 'templates' ? 'Bibliothek'
+                {activePanel === 'apps' ? 'Apps'
+                  : activePanel === 'templates' ? 'Bibliothek'
                   : activePanel === 'history' ? 'History'
                   : activePanel === 'stats' ? 'Dashboard'
                   : activePanel === 'admin' ? 'Nutzerverwaltung'
@@ -1166,6 +1168,10 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {activePanel === 'apps' && (
+              <Apps authFetch={authFetch} currentUser={currentUser} />
+            )}
 
             {showTemplates && (
               <div className="max-w-2xl bg-white border border-slate-200 rounded-xl p-5">
@@ -1413,6 +1419,7 @@ export default function App() {
                               className="px-2 py-1 bg-white border border-slate-200 rounded-md text-xs outline-none disabled:opacity-50"
                             >
                               <option value="user">Nutzer</option>
+                              <option value="poweruser">Poweruser</option>
                               <option value="admin">Admin</option>
                             </select>
                             <button
